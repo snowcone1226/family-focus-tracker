@@ -967,10 +967,10 @@ function handleGmailImportCarine(){
   gmailTokenClientCarine.requestAccessToken({ prompt: gmailAccessTokenCarine ? '' : 'consent' });
 }
 
-async function scanGmailAndImport(){  const isCarine = activeGmailOwner === 'Carine';  const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;  const btnId = isCarine ? 'syncCarineBtn' : 'gmailScanBtn';  const scanParams = new URLSearchParams(location.search);  const lookbackDays = parseInt(scanParams.get('days'), 10) || 30;  const isCarine = activeGmailOwner === 'Carine';  const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;  const btnId = isCarine ? 'syncCarineBtn' : 'gmailScanBtn';  const isCarine = activeGmailOwner === 'Carine';
-                                    const scanParams = new URLSearchParams(location.search);
-                                    const lookbackDays = parseInt(scanParams.get('days'), 10) || 30;
-                                    const maxResults = parseInt(scanParams.get('max'), 10) || 40;
+async function scanGmailAndImport(){
+  const scanParams = new URLSearchParams(location.search);
+  const lookbackDays = parseInt(scanParams.get('days'), 10) || 30;
+  const maxResults = parseInt(scanParams.get('max'), 10) || 40;
   window.lastScanLookbackDays = lookbackDays;
   const isCarine = activeGmailOwner === 'Carine';
   const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;
