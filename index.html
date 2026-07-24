@@ -163,7 +163,7 @@
 
 <div class="banner" id="syncBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
   <div id="syncStatusText" style="font-size:12px;">Loading sync status…</div>
-  <button class="btn" style="flex-shrink:0;" onclick="handleSyncNow()">⟳ Sync now</button>
+  <button class="btn" id="syncNowBtn" style="flex-shrink:0;" onclick="handleSyncNow()">⟳ Sync now</button>
 </div>
 
 <div class="stats" id="statsRow"></div>
@@ -298,6 +298,7 @@
 </div>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3/lib/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 <script>
 const ACT_KEY = 'familyFocusTracker_activities_v3';
@@ -624,11 +625,160 @@ function renderSyncBar(){
   document.getElementById('syncStatusText').innerHTML =
     `Last synced — To Do: <b>${fmtSyncDate(syncStatus.todo)}</b> · Gmail (Allen): <b>${fmtSyncDate(syncStatus.gmailAllen)}</b> · Gmail (Carine): <b>${fmtSyncDate(syncStatus.gmailCarine)}</b>`;
 }
-function handleSyncNow(){
-  // To Do sync isn't wired up yet (needs a Microsoft account connection). Gmail import has
-  // its own dedicated button/flow (handleGmailImport) since it needs a review step.
-  alert('Live one-click To Do sync isn\'t connected yet. For now, "Sync now" opens CSV import so you can pull in a fresh export. Use "✉ Scan Gmail" above to import from email.');
-  document.getElementById('importFile').click();
+// --- Microsoft To Do 2-way sync ---
+const MSAL_CLIENT_ID = 'b515b3ac-65b5-46f9-9991-d4e5b1873960';
+const TODO_LIST_NAME = 'Family Focus Tracker';
+const GRAPH_SCOPES = ['Tasks.ReadWrite', 'User.Read'];
+let msalInstance = null;
+let msalAccount = null;
+let todoListIdCache = null;
+
+async function ensureMsal(){
+  if(msalInstance) return msalInstance;
+  if(!window.msal){ throw new Error('Microsoft sign-in library did not load — check your connection and try again.'); }
+  msalInstance = new msal.PublicClientApplication({
+    auth: {
+      clientId: MSAL_CLIENT_ID,
+      authority: 'https://login.microsoftonline.com/common',
+      redirectUri: window.location.origin
+    },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msalInstance.initialize();
+  await msalInstance.handleRedirectPromise().catch(()=>{});
+  const accounts = msalInstance.getAllAccounts();
+  if(accounts.length > 0) msalAccount = accounts[0];
+  return msalInstance;
+}
+
+async function getGraphToken(){
+  await ensureMsal();
+  if(msalAccount){
+    try{
+      const result = await msalInstance.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: msalAccount });
+      return result.accessToken;
+    }catch(e){ /* fall through to interactive login */ }
+  }
+  const result = await msalInstance.loginPopup({ scopes: GRAPH_SCOPES });
+  msalAccount = result.account;
+  return result.accessToken;
+}
+
+async function graphFetch(url, token, options){
+  const res = await fetch(url, Object.assign({}, options, {
+    headers: Object.assign({ Authorization: 'Bearer ' + token, 'content-type': 'application/json' }, (options && options.headers) || {})
+  }));
+  if(!res.ok){
+    const body = await res.text().catch(()=> '');
+    throw new Error('Graph API error (' + res.status + '): ' + body);
+  }
+  if(res.status === 204) return null;
+  return res.json();
+}
+
+async function ensureTodoListId(token){
+  if(todoListIdCache) return todoListIdCache;
+  const lists = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists', token);
+  let match = (lists.value || []).find(l=>l.displayName === TODO_LIST_NAME);
+  if(!match){
+    match = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists', token, {
+      method: 'POST', body: JSON.stringify({ displayName: TODO_LIST_NAME })
+    });
+  }
+  todoListIdCache = match.id;
+  return todoListIdCache;
+}
+
+function stripFocusTag(title){
+  const m = /^\[([^\]]+)\]\s*(.*)$/.exec(title || '');
+  if(m) return { focusArea: m[1], title: m[2] };
+  return { focusArea: null, title: title || '' };
+}
+
+async function pullTodoTasks(token){
+  const lists = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists', token);
+  for(const list of (lists.value || [])){
+    let tasksResp;
+    try{
+      tasksResp = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + list.id + '/tasks?$top=200', token);
+    }catch(e){ continue; }
+    for(const t of (tasksResp.value || [])){
+      const existing = data.find(a => a.todoTaskId === t.id && a.todoListId === list.id);
+      const isComplete = t.status === 'completed';
+      const due = t.dueDateTime && t.dueDateTime.dateTime ? t.dueDateTime.dateTime.slice(0,10) : '';
+      if(existing){
+        existing.status = isComplete ? 'Complete' : (existing.status === 'Complete' ? 'In Progress' : existing.status);
+        if(due) existing.due = due;
+      } else {
+        const parsed = stripFocusTag(t.title);
+        const nextId = Math.max(0, ...data.map(a=>a.id)) + 1;
+        data.push({
+          id: nextId,
+          title: parsed.title,
+          pillar: pillars.some(p=>p.name===parsed.focusArea) ? parsed.focusArea : pillars[0].name,
+          owner: owners[0] || 'Allen',
+          priority: 'Medium',
+          status: isComplete ? 'Complete' : (statuses[0] ? statuses[0].name : 'In Progress'),
+          due: due,
+          notes: (t.body && t.body.content) ? t.body.content : '',
+          updated: new Date().toISOString().slice(0,10),
+          todoTaskId: t.id,
+          todoListId: list.id
+        });
+      }
+    }
+  }
+}
+
+async function pushTodoTasks(token, targetListId){
+  for(const a of data){
+    if(!a.todoTaskId){
+      const body = {
+        title: '[' + a.pillar + '] ' + a.title,
+        status: a.status === 'Complete' ? 'completed' : 'notStarted'
+      };
+      if(a.due) body.dueDateTime = { dateTime: a.due + 'T00:00:00', timeZone: 'UTC' };
+      if(a.notes) body.body = { content: a.notes, contentType: 'text' };
+      try{
+        const created = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + targetListId + '/tasks', token, {
+          method: 'POST', body: JSON.stringify(body)
+        });
+        a.todoTaskId = created.id;
+        a.todoListId = targetListId;
+      }catch(e){ /* skip on failure, retry next sync */ }
+    } else {
+      try{
+        await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + a.todoListId + '/tasks/' + a.todoTaskId, token, {
+          method: 'PATCH', body: JSON.stringify({ status: a.status === 'Complete' ? 'completed' : 'notStarted' })
+        });
+      }catch(e){ /* skip on failure */ }
+    }
+  }
+}
+
+async function syncMicrosoftTodo(){
+  const token = await getGraphToken();
+  const listId = await ensureTodoListId(token);
+  await pullTodoTasks(token);
+  await pushTodoTasks(token, listId);
+  syncStatus.todo = new Date().toISOString().slice(0,10);
+  saveList(SYNC_KEY, syncStatus);
+  saveList(ACT_KEY, data);
+  render();
+  renderSyncBar();
+}
+
+async function handleSyncNow(){
+  const btn = document.getElementById('syncNowBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Syncing\u2026'; btn.style.opacity = '0.6'; }
+  const errors = [];
+  try{
+    await syncMicrosoftTodo();
+  }catch(e){
+    errors.push('To Do sync: ' + (e && e.message ? e.message : e));
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '\u27f3 Sync now'; btn.style.opacity = '1'; }
+  if(errors.length) alert(errors.join('\n'));
 }
 
 // --- Gmail import ---
