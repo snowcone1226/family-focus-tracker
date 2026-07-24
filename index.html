@@ -932,7 +932,7 @@ async function scanGmailAndImport(){
     }
 
     setGmailBtnState(btnId, 'Reading ' + ids.length + ' emails…', true);
-    const emails = [];
+    let emails = [];
     const chunkSize = 8;
     for(let i=0; i<ids.length; i+=chunkSize){
       const chunk = ids.slice(i, i+chunkSize);
@@ -945,6 +945,23 @@ async function scanGmailAndImport(){
         return { id: m.id, threadId: m.threadId, subject: headers.Subject || '(no subject)', from: headers.From || '', date: headers.Date || '', snippet: m.snippet || '' };
       }));
       results.forEach(r=>{ if(r) emails.push(r); });
+    }
+
+    // Carine's scan: skip emails from/about known noisy senders (localization
+    // vendors + notification-heavy apps) so they never even reach the task
+    // extraction step.
+    if(isCarine){
+      const CARINE_EXCLUDE_KEYWORDS = ['welocalize', 'vistatec', 'rws', 'lucid', 'netflix', 'slack'];
+      emails = emails.filter(e=>{
+        const hay = ((e.subject||'') + ' ' + (e.from||'') + ' ' + (e.snippet||'')).toLowerCase();
+        return !CARINE_EXCLUDE_KEYWORDS.some(k=> hay.includes(k));
+      });
+    }
+
+    if(emails.length === 0){
+      setGmailBtnState(btnId, idleLabel, false);
+      alert('No messages found in the last 30 days after filtering out excluded senders.');
+      return;
     }
 
     setGmailBtnState(btnId, 'Finding tasks…', true);
