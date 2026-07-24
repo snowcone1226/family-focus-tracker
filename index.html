@@ -149,8 +149,9 @@
   </div>
 </div>
 
-<div class="banner">
-  <b>Loaded with your real backlog</b> — synced from Microsoft To Do (82 items) plus manually tracked activities, sorted into 6 focus areas, plus a Budget vs Actual panel synced from PocketSmith's Income &amp; Expense report. Edit, add, or delete below — changes save automatically in this browser. This file also lives in your OneDrive so you and Carine can each open your own copy; re-import the latest CSV export whenever you want to refresh it with new synced items. Anything left untouched for 2+ weeks automatically flips to <b>Stalled</b> so it doesn't quietly fall off the radar.
+<div class="banner" id="syncBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+  <div id="syncStatusText" style="font-size:12px;">Loading sync status…</div>
+  <button class="btn" style="flex-shrink:0;" onclick="handleSyncNow()">⟳ Sync now</button>
 </div>
 
 <div class="stats" id="statsRow"></div>
@@ -193,7 +194,13 @@
 <div class="pillars" id="pillarCards"></div>
 
 <div class="table-card">
-  <h3 style="margin-bottom:14px;">All activities</h3>
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+    <h3 style="margin:0;">All activities</h3>
+    <div id="filterPill" style="display:none; align-items:center; gap:8px; background:var(--blue-light); color:var(--blue); border-radius:20px; padding:5px 12px; font-size:12px; font-weight:600;">
+      <span></span>
+      <button onclick="clearFilter()" style="border:none; background:transparent; color:var(--blue); cursor:pointer; font-weight:700; font-size:13px; padding:0;">✕</button>
+    </div>
+  </div>
   <table>
     <thead><tr><th>Activity</th><th>Focus area</th><th>Owner</th><th>Priority</th><th>Status</th><th>Due</th><th></th></tr></thead>
     <tbody id="tableBody"></tbody>
@@ -512,10 +519,40 @@ function escapeHtml(str){ const div = document.createElement('div'); div.textCon
 
 let donutChart = null;
 
+// --- Sync status bar ---
+const SYNC_KEY = 'familyFocusTracker_syncStatus_v1';
+const DEFAULT_SYNC = { todo: new Date().toISOString().slice(0,10), gmailAllen: null, gmailCarine: null };
+let syncStatus = loadList(SYNC_KEY, DEFAULT_SYNC);
+
+function fmtSyncDate(iso){
+  if(!iso) return 'not connected';
+  return new Date(iso+'T00:00:00').toLocaleDateString('en-US',{month:'short', day:'numeric'});
+}
+function renderSyncBar(){
+  document.getElementById('syncStatusText').innerHTML =
+    `Last synced — To Do: <b>${fmtSyncDate(syncStatus.todo)}</b> · Gmail (Allen): <b>${fmtSyncDate(syncStatus.gmailAllen)}</b> · Gmail (Carine): <b>${fmtSyncDate(syncStatus.gmailCarine)}</b>`;
+}
+function handleSyncNow(){
+  // Live push-button sync isn't wired up yet (needs Microsoft/Google account connections).
+  // For now this reuses the CSV import path, which is the current real sync mechanism.
+  alert('Live one-click sync (To Do + Gmail) isn\'t connected yet — that\'s next up. For now, "Sync now" opens CSV import so you can pull in a fresh export.');
+  document.getElementById('importFile').click();
+}
+
+// --- Stat-card filtering ---
+let activeFilter = null; // {key, label, test(activity)->bool}
+function setFilter(f){
+  activeFilter = (activeFilter && activeFilter.key === f.key) ? null : f;
+  renderStats();
+  renderTable();
+}
+function clearFilter(){ activeFilter = null; renderStats(); renderTable(); }
+
 function render(){
   applyAutoStall();
   populateSelects();
   renderBudgetCard();
+  renderSyncBar();
   renderStats(); renderDonut(); renderPipeline(); renderAttention(); renderPillars(); renderTable();
   document.getElementById('refreshedAt').textContent = new Date().toLocaleString('en-US',{hour:'numeric',minute:'2-digit',month:'short',day:'numeric'});
   document.getElementById('dateSub').textContent = `Weekly review · ${data.length} activities across ${pillars.length} focus areas`;
@@ -560,19 +597,30 @@ function renderStats(){
   const countFor = (o)=> o ? data.filter(a=>a.owner===o && a.status!=='Complete').length : 0;
   const stuck = data.filter(a=>a.status==='Blocked' || a.status==='Stalled').length;
   const cards = [
-    {num:total, label:'Activities', sub:`across ${pillars.length} focus areas`, color:'#111827', icon:'▤'},
-    {num:countFor(a1), label:a1?`Needs ${a1}`:'Needs owner', sub:'next step is theirs', color:'#2564cf', icon:'●'},
-    {num:countFor(a2), label:a2?`Needs ${a2}`:'Needs owner', sub:'next step is theirs', color:'#7c5cfc', icon:'●'},
-    {num:countFor(a3), label:a3?a3:'Joint', sub:'shared next step', color:'#12a894', icon:'◆'},
-    {num:stuck, label:'Stalled / Blocked', sub:'needs a decision', color:'#e0245e', icon:'!'},
+    {key:'all', num:total, label:'Activities', sub:`across ${pillars.length} focus areas`, color:'#111827', icon:'▤',
+      test:()=>true},
+    {key:'owner1', num:countFor(a1), label:a1?`Needs ${a1}`:'Needs owner', sub:'next step is theirs', color:'#2564cf', icon:'●',
+      test:(a)=>a.owner===a1 && a.status!=='Complete'},
+    {key:'owner2', num:countFor(a2), label:a2?`Needs ${a2}`:'Needs owner', sub:'next step is theirs', color:'#7c5cfc', icon:'●',
+      test:(a)=>a.owner===a2 && a.status!=='Complete'},
+    {key:'owner3', num:countFor(a3), label:a3?a3:'Joint', sub:'shared next step', color:'#12a894', icon:'◆',
+      test:(a)=>a.owner===a3 && a.status!=='Complete'},
+    {key:'stuck', num:stuck, label:'Stalled / Blocked', sub:'needs a decision', color:'#e0245e', icon:'!',
+      test:(a)=>a.status==='Blocked' || a.status==='Stalled'},
   ];
-  document.getElementById('statsRow').innerHTML = cards.map(c=>`
-    <div class="stat-card" style="border-top-color:${c.color}">
+  document.getElementById('statsRow').innerHTML = cards.map(c=>{
+    const isActive = activeFilter && activeFilter.key === c.key;
+    return `
+    <div class="stat-card" data-filter-key="${c.key}" style="border-top-color:${c.color}; cursor:pointer; ${isActive ? `outline:2px solid ${c.color}; outline-offset:-1px;` : ''}">
       <div class="icon" style="background:${c.color}1a; color:${c.color}">${c.icon}</div>
       <div class="num">${c.num}</div>
       <div class="label">${c.label}</div>
       <div class="sub-label">${c.sub}</div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#statsRow .stat-card').forEach((el, i)=>{
+    el.addEventListener('click', ()=> setFilter(cards[i]));
+  });
 }
 
 function renderDonut(){
@@ -628,8 +676,21 @@ function renderPillars(){
   }).join('');
 }
 
+function renderFilterPill(){
+  const el = document.getElementById('filterPill');
+  if(!el) return;
+  if(activeFilter){
+    el.style.display = 'flex';
+    el.querySelector('span').textContent = `Filtered: ${activeFilter.label}`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
 function renderTable(){
-  const sorted = [...data].sort((a,b)=> daysUntil(a.due)-daysUntil(b.due));
+  renderFilterPill();
+  const base = activeFilter ? data.filter(activeFilter.test) : data;
+  const sorted = [...base].sort((a,b)=> daysUntil(a.due)-daysUntil(b.due));
   document.getElementById('tableBody').innerHTML = sorted.map(a=>{
     const pc = PRIORITY_COLORS[a.priority] || PRIORITY_COLORS['Medium'];
     const sc = statusByName(a.status).color;
@@ -787,6 +848,8 @@ function importCSV(evt){
       }
       data = newData;
       persistAll();
+      syncStatus.todo = new Date().toISOString().slice(0,10);
+      saveList(SYNC_KEY, syncStatus);
       render();
       alert(`Imported ${data.length} activities from "${file.name}".`);
     } catch(err){
