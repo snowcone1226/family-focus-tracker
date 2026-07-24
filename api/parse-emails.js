@@ -4,20 +4,27 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const { emails } = req.body || {};
+  const { emails, owner } = req.body || {};
   if (!Array.isArray(emails) || emails.length === 0) {
     res.status(400).json({ error: 'No emails provided' });
     return;
   }
+
+  const ownerName = owner === 'Carine' ? 'Carine' : 'Allen';
+  const aggressive = ownerName === 'Carine';
 
   const trimmed = emails.slice(0, 40);
   const emailList = trimmed
     .map((e, i) => `[${i}] id=${e.id}\nFrom: ${e.from}\nDate: ${e.date}\nSubject: ${e.subject}\nSnippet: ${e.snippet}`)
     .join('\n\n');
 
+  const scopeParagraph = aggressive
+    ? `Read the emails below (from ${ownerName}'s inbox, last 30 days) and cast a wide net: flag anything ${ownerName} would plausibly want on her radar, not just clear-cut chores. This includes replies she owes (even casual ones), appointments or events to book or confirm, deadlines, forms, payments due, invitations or RSVPs, requests from other people, things to review/sign/approve, and reminders about something time-sensitive. When an email is borderline, include it rather than drop it — a task she can dismiss in one tap is better than a task she never saw. Skip only pure noise: mass marketing, automated receipts/confirmations with nothing left to do, social/app notification digests, and newsletters with no specific ask.`
+    : `Read the emails below (from ${ownerName}'s inbox, last 30 days) and identify ONLY emails that represent a real, concrete action ${ownerName} likely needs to take himself (e.g. reply needed, form to fill out, appointment to book, payment due, deadline approaching, something to review and confirm). Skip newsletters, marketing, receipts with no action needed, automated notifications, social media digests, and anything vague or already resolved. Be conservative: it is better to skip a borderline email than to create noise in someone's task list.`;
+
   const system = `You help a busy parent turn their email inbox into a short action list for a personal task tracker called Family Focus Tracker. The tracker organizes tasks into these focus areas: Home & Household, Finances & Budgeting, Kids & Family, Health & Travel, Career & Professional, Personal Growth & Admin. Owners are: Allen, Carine, or Joint.
 
-Read the emails below (from Allen's inbox, last 30 days) and identify ONLY emails that represent a real, concrete action Allen likely needs to take himself (e.g. reply needed, form to fill out, appointment to book, payment due, deadline approaching, something to review and confirm). Skip newsletters, marketing, receipts with no action needed, automated notifications, social media digests, and anything vague or already resolved. Be conservative: it is better to skip a borderline email than to create noise in someone's task list.
+${scopeParagraph}
 
 For each actionable email, call the extract_tasks tool with a concise task list. Use the exact "id" value given for each email as "emailId". Keep titles short and action-oriented (e.g. "Reply to Sarah re: Q3 budget review", not "Email about budget"). If nothing in the batch is actionable, call the tool with an empty tasks array.`;
 
