@@ -219,7 +219,7 @@
   </table>
 </div>
 
-<div class="footer-note">Family Focus Tracker · data stored locally in this browser · last refreshed <span id="refreshedAt"></span></div>
+<div class="footer-note">Family Focus Tracker · synced across devices · last refreshed <span id="refreshedAt"></span></div>
 
 <!-- Add/Edit Activity Modal -->
 <div class="modal-overlay" id="modalOverlay">
@@ -322,7 +322,72 @@ function loadList(key, defaults){
   localStorage.setItem(key, JSON.stringify(defaults));
   return defaults;
 }
-function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); }
+function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); schedulePush(); }
+
+// ---- Shared backend sync (Upstash-backed /api/state) ----
+// Local-first: the page always paints instantly from localStorage first (as before),
+// then reconciles with the shared server copy in the background so multiple devices
+// (Allen's + Carine's) stay in sync without a login system.
+const STATE_API = '/api/state';
+const LAST_SERVER_STAMP_KEY = 'familyFocusTracker_lastServerUpdatedAt';
+let pushTimer = null;
+let isPushing = false;
+let isPulling = false;
+
+function schedulePush(){
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushRemoteState, 800);
+}
+
+async function pushRemoteState(){
+  if(isPushing) return;
+  isPushing = true;
+  try{
+    const payload = { activities: data, pillars, statuses, owners, budget, syncStatus };
+    const res = await fetch(STATE_API, {
+      method: 'PUT',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(res.ok){
+      const j = await res.json();
+      if(j && j.updatedAt) localStorage.setItem(LAST_SERVER_STAMP_KEY, j.updatedAt);
+    }
+  }catch(e){ console.warn('Sync: push to shared backend failed', e); }
+  isPushing = false;
+}
+
+async function pullRemoteState(silent){
+  if(isPulling) return;
+  isPulling = true;
+  try{
+    const res = await fetch(STATE_API);
+    if(!res.ok){ isPulling = false; return; }
+    const remote = await res.json();
+    if(!remote || !remote.exists){
+      // Nothing saved on the shared backend yet (first-ever deploy) — seed it
+      // from whatever this browser already has (Allen's existing 88 activities).
+      await pushRemoteState();
+      isPulling = false;
+      return;
+    }
+    const localStamp = localStorage.getItem(LAST_SERVER_STAMP_KEY);
+    if(remote.updatedAt && remote.updatedAt !== localStamp){
+      data = normalizeData(remote.activities || data);
+      pillars = remote.pillars || pillars;
+      statuses = remote.statuses || statuses;
+      owners = remote.owners || owners;
+      budget = remote.budget || budget;
+      syncStatus = remote.syncStatus || syncStatus;
+      saveList(ACT_KEY, data); saveList(PILLAR_KEY, pillars); saveList(STATUS_KEY, statuses);
+      saveList(OWNER_KEY, owners); saveList(BUDGET_KEY, budget); saveList(SYNC_KEY, syncStatus);
+      localStorage.setItem(LAST_SERVER_STAMP_KEY, remote.updatedAt);
+      render(); renderBudgetCard(); renderSyncBar();
+    }
+  }catch(e){ console.warn('Sync: pull from shared backend failed', e); }
+  isPulling = false;
+}
+
 
 const DEFAULT_PILLARS = [
   {name:'Home & Household', main:'#12a894', light:'#e4f7f4'},
@@ -1189,6 +1254,7 @@ document.getElementById('modalOverlay').addEventListener('click', (e)=>{ if(e.ta
 document.getElementById('manageOverlay').addEventListener('click', (e)=>{ if(e.target.id==='manageOverlay') closeManage(); });
 
 render();
+pullRemoteState();
 </script>
 </body>
 </html>
