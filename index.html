@@ -359,7 +359,7 @@ async function pushRemoteState(){
 }
 
 async function pullRemoteState(silent){
-  if(isPulling) return;
+  if(isPulling || syncInProgress) return;
   isPulling = true;
   try{
     const res = await fetch(STATE_API);
@@ -632,6 +632,7 @@ const GRAPH_SCOPES = ['Tasks.ReadWrite', 'User.Read'];
 let msalInstance = null;
 let msalAccount = null;
 let todoListIdCache = null;
+let syncInProgress = false;
 
 async function ensureMsal(){
   if(msalInstance) return msalInstance;
@@ -695,60 +696,96 @@ function stripFocusTag(title){
   return { focusArea: null, title: title || '' };
 }
 
-async function pullTodoTasks(token){
-  const lists = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists', token);
-  for(const list of (lists.value || [])){
-    let tasksResp;
-    try{
-      tasksResp = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + list.id + '/tasks?$top=200', token);
-    }catch(e){ continue; }
-    for(const t of (tasksResp.value || [])){
-      const existing = data.find(a => a.todoTaskId === t.id && a.todoListId === list.id);
-      const isComplete = t.status === 'completed';
-      const due = t.dueDateTime && t.dueDateTime.dateTime ? t.dueDateTime.dateTime.slice(0,10) : '';
-      if(existing){
-        existing.status = isComplete ? 'Complete' : (existing.status === 'Complete' ? 'In Progress' : existing.status);
-        if(due) existing.due = due;
-      } else {
-        const parsed = stripFocusTag(t.title);
-        const nextId = Math.max(0, ...data.map(a=>a.id)) + 1;
-        data.push({
-          id: nextId,
-          title: parsed.title,
-          pillar: pillars.some(p=>p.name===parsed.focusArea) ? parsed.focusArea : pillars[0].name,
-          owner: owners[0] || 'Allen',
-          priority: 'Medium',
-          status: isComplete ? 'Complete' : (statuses[0] ? statuses[0].name : 'In Progress'),
-          due: due,
-          notes: (t.body && t.body.content) ? t.body.content : '',
-          updated: new Date().toISOString().slice(0,10),
-          todoTaskId: t.id,
-          todoListId: list.id
-        });
-      }
+async function pullTodoTasks(token, targetListId){
+  // Only read the dedicated "Family Focus Tracker" list -- NOT the user's other
+  // personal To Do lists. (Earlier version looped over every list in the account,
+  // which imported hundreds of unrelated personal tasks into this dashboard.)
+  let all = [];
+  let url = 'https://graph.microsoft.com/v1.0/me/todo/lists/' + encodeURIComponent(targetListId) + '/tasks?$top=200';
+  let guard = 0;
+  while(url && guard < 25){
+    const res = await graphFetch(url, token);
+    all = all.concat(res.value || []);
+    url = res['@odata.nextLink'] || null;
+    guard++;
+  }
+  for(const t of all){
+    let existing = data.find(a => a.todoTaskId === t.id && a.todoListId === targetListId);
+    const isComplete = t.status === 'completed';
+    const due = t.dueDateTime && t.dueDateTime.dateTime ? t.dueDateTime.dateTime.slice(0,10) : '';
+    if(!existing){
+      // Fallback: if a local activity with the same tagged title exists but was
+      // never linked (e.g. lost its todoTaskId in an earlier failed sync), link
+      // it instead of creating a duplicate.
+      const parsed = stripFocusTag(t.title);
+      existing = data.find(a => !a.todoTaskId && a.title === parsed.title && a.pillar === parsed.focusArea);
+      if(existing){ existing.todoTaskId = t.id; existing.todoListId = targetListId; }
+    }
+    if(existing){
+      existing.status = isComplete ? 'Complete' : (existing.status === 'Complete' ? 'In Progress' : existing.status);
+      if(due) existing.due = due;
+    } else {
+      const parsed = stripFocusTag(t.title);
+      const nextId = Math.max(0, ...data.map(a=>a.id), 0) + 1;
+      data.push({
+        id: nextId,
+        title: parsed.title,
+        pillar: pillars.some(p=>p.name===parsed.focusArea) ? parsed.focusArea : pillars[0].name,
+        owner: owners[0] || 'Allen',
+        priority: 'Medium',
+        status: isComplete ? 'Complete' : (statuses[0] ? statuses[0].name : 'In Progress'),
+        due: due,
+        notes: (t.body && t.body.content) ? t.body.content : '',
+        updated: new Date().toISOString().slice(0,10),
+        todoTaskId: t.id,
+        todoListId: targetListId
+      });
     }
   }
 }
 
 async function pushTodoTasks(token, targetListId){
+  // Defense in depth: fetch the current remote titles in the target list so we
+  // never create a second task with an identical title, even if a local
+  // activity's todoTaskId link was somehow lost.
+  const remoteTitles = new Set();
+  try{
+    let url = 'https://graph.microsoft.com/v1.0/me/todo/lists/' + encodeURIComponent(targetListId) + '/tasks?$top=200';
+    let guard = 0;
+    while(url && guard < 25){
+      const res = await graphFetch(url, token);
+      (res.value || []).forEach(t => remoteTitles.add(t.title));
+      url = res['@odata.nextLink'] || null;
+      guard++;
+    }
+  }catch(e){ /* if this fails, fall back to the local todoTaskId guard only */ }
+
   for(const a of data){
     if(!a.todoTaskId){
+      const taggedTitle = '[' + a.pillar + '] ' + a.title;
+      if(remoteTitles.has(taggedTitle)) continue; // already exists remotely, skip creating a dup
       const body = {
-        title: '[' + a.pillar + '] ' + a.title,
+        title: taggedTitle,
         status: a.status === 'Complete' ? 'completed' : 'notStarted'
       };
       if(a.due) body.dueDateTime = { dateTime: a.due + 'T00:00:00', timeZone: 'UTC' };
       if(a.notes) body.body = { content: a.notes, contentType: 'text' };
       try{
-        const created = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + targetListId + '/tasks', token, {
+        const created = await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + encodeURIComponent(targetListId) + '/tasks', token, {
           method: 'POST', body: JSON.stringify(body)
         });
         a.todoTaskId = created.id;
         a.todoListId = targetListId;
+        remoteTitles.add(taggedTitle);
+        saveList(ACT_KEY, data); // persist the new link immediately, don't wait for end of sync
       }catch(e){ /* skip on failure, retry next sync */ }
-    } else {
+    } else if(a.todoListId === targetListId) {
+      // Safety: only ever PATCH tasks that live in the dedicated Family Focus
+      // Tracker list. Never touch tasks in the user's other personal lists,
+      // even if a stray activity record still references one (leftover from
+      // an earlier bug where pull briefly imported all lists).
       try{
-        await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + a.todoListId + '/tasks/' + a.todoTaskId, token, {
+        await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + encodeURIComponent(a.todoListId) + '/tasks/' + encodeURIComponent(a.todoTaskId), token, {
           method: 'PATCH', body: JSON.stringify({ status: a.status === 'Complete' ? 'completed' : 'notStarted' })
         });
       }catch(e){ /* skip on failure */ }
@@ -757,15 +794,20 @@ async function pushTodoTasks(token, targetListId){
 }
 
 async function syncMicrosoftTodo(){
-  const token = await getGraphToken();
-  const listId = await ensureTodoListId(token);
-  await pullTodoTasks(token);
-  await pushTodoTasks(token, listId);
-  syncStatus.todo = new Date().toISOString().slice(0,10);
-  saveList(SYNC_KEY, syncStatus);
-  saveList(ACT_KEY, data);
-  render();
-  renderSyncBar();
+  syncInProgress = true;
+  try{
+    const token = await getGraphToken();
+    const listId = await ensureTodoListId(token);
+    await pullTodoTasks(token, listId);
+    await pushTodoTasks(token, listId);
+    syncStatus.todo = new Date().toISOString().slice(0,10);
+    saveList(SYNC_KEY, syncStatus);
+    saveList(ACT_KEY, data);
+    render();
+    renderSyncBar();
+  } finally {
+    syncInProgress = false;
+  }
 }
 
 async function handleSyncNow(){
