@@ -179,6 +179,7 @@
     </div>
     <div style="display:flex; gap:8px; flex-shrink:0;">
       <a class="bc-edit" href="https://my.pocketsmith.com/income_expense" target="_blank" rel="noopener" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px;">↗ View in PocketSmith</a>
+      <button class="bc-edit" id="pocketsmithRefreshBtn" onclick="refreshPocketSmithBudget()">⟳ Refresh</button>
       <button class="bc-edit" onclick="openBudgetModal()">Edit</button>
     </div>
   </div>
@@ -588,6 +589,33 @@ function saveBudget(){
   renderBudgetCard();
 }
 document.getElementById('budgetOverlay').addEventListener('click', (e)=>{ if(e.target.id==='budgetOverlay') closeBudgetModal(); });
+
+async function refreshPocketSmithBudget(){
+  const btn = document.getElementById('pocketsmithRefreshBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Refreshing…'; btn.style.opacity = '0.6'; }
+  try{
+    const resp = await fetch('/api/pocketsmith-budget');
+    if(!resp.ok){
+      const errBody = await resp.json().catch(()=>({}));
+      throw new Error(errBody.error || ('PocketSmith refresh failed (' + resp.status + ')'));
+    }
+    const data = await resp.json();
+    // Rollover is a manually-tracked credit (not something PocketSmith's budget
+    // summary reports), so we leave budget.rollover untouched here.
+    budget = {
+      ...budget,
+      asOf: data.asOf || budget.asOf,
+      income: data.income || budget.income,
+      expense: data.expense || budget.expense
+    };
+    saveList(BUDGET_KEY, budget);
+    renderBudgetCard();
+  }catch(err){
+    alert('PocketSmith refresh failed: ' + (err && err.message ? err.message : err));
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '⟳ Refresh'; btn.style.opacity = '1'; }
+  }
+}
 document.getElementById('importReviewOverlay').addEventListener('click', (e)=>{ if(e.target.id==='importReviewOverlay') closeImportReview(); });
 
 function persistAll(){ saveList(ACT_KEY,data); saveList(PILLAR_KEY,pillars); saveList(STATUS_KEY,statuses); saveList(OWNER_KEY,owners); }
@@ -837,6 +865,11 @@ async function handleSyncNow(){
   }
   if(btn){ btn.disabled = false; btn.textContent = '\u27f3 Sync now'; btn.style.opacity = '1'; }
   if(errors.length) alert(errors.join('\n'));
+  // These manage their own button state and error alerts independently, and
+  // Gmail's review-queue modal (if any candidate tasks are found) should
+  // appear after the Sync now button above is already re-enabled.
+  refreshPocketSmithBudget();
+  handleGmailImport();
 }
 
 // --- Gmail import ---
