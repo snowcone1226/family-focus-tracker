@@ -798,6 +798,19 @@ async function syncMicrosoftTodo(){
   try{
     const token = await getGraphToken();
     const listId = await ensureTodoListId(token);
+    // One-time self-healing cleanup: an earlier version of this sync pulled
+    // tasks from ALL of your Microsoft To Do lists (not just Family Focus
+    // Tracker), which imported hundreds of unrelated personal tasks into this
+    // dashboard. Detect and offer to remove any leftovers from that bug.
+    // (Nothing in your actual Microsoft To Do lists is touched or deleted.)
+    const stray = data.filter(a => a.todoListId && a.todoListId !== listId);
+    if(stray.length){
+      const ok = confirm('Found ' + stray.length + ' activities that were imported by mistake from your other Microsoft To Do lists (a sync bug that\'s now fixed). Remove them from this dashboard? Your real To Do lists are not affected either way.');
+      if(ok){
+        data = data.filter(a => !(a.todoListId && a.todoListId !== listId));
+        saveList(ACT_KEY, data);
+      }
+    }
     await pullTodoTasks(token, listId);
     await pushTodoTasks(token, listId);
     syncStatus.todo = new Date().toISOString().slice(0,10);
