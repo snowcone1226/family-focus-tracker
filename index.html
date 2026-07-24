@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Family Focus Tracker",
+  "schemaVersion": 1,
+  "description": "Family activity tracker dashboard — tracks focus areas (Home & Household, Finances & Budgeting, Kids & Family, Health & Travel, Career & Professional, Personal Growth & Admin), owners, priority, status, and due dates. Seeded with real synced data from Microsoft To Do (84 activities) and a Budget vs Actual — Month to Date panel manually synced from PocketSmith's Income & Expense report. Editable in-browser (add/edit/delete), stored in localStorage."
+}
+</script>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Family Focus Tracker</title>
+<style>
+  :root{
+    color-scheme: light;
+    --blue:#2564cf; --blue-light:#e8f0fd;
+    --purple:#7c5cfc; --purple-light:#f1edfe;
+    --teal:#12a894; --teal-light:#e4f7f4;
+    --pink:#e0245e; --pink-light:#fdeaef;
+    --orange:#f59e0b; --orange-light:#fef3e0;
+    --gray-50:#f5f6fa; --gray-100:#eef0f5; --gray-200:#e3e6ee;
+    --gray-500:#6b7280; --gray-700:#374151; --gray-900:#111827;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--gray-50); color:var(--gray-900); padding:20px 24px 60px;
+  }
+  .header{display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:12px;}
+  .header-left{display:flex; align-items:center; gap:12px;}
+  .logo{width:38px; height:38px; border-radius:9px; background:linear-gradient(135deg,var(--blue),var(--purple)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:16px;}
+  .header h1{font-size:19px; margin:0; color:var(--gray-900);}
+  .header .sub{font-size:12.5px; color:var(--gray-500); margin-top:2px;}
+  .header-actions{display:flex; gap:10px;}
+  .btn{border:1px solid var(--gray-200); background:#fff; padding:9px 14px; border-radius:9px; font-size:13px; cursor:pointer; font-weight:600; color:var(--gray-700); display:flex; align-items:center; gap:6px;}
+  .btn.primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+  .btn:hover{filter:brightness(0.97);}
+  .banner{background:var(--blue-light); border:1px solid #cddcfa; color:#1e4a99; font-size:12.5px; padding:10px 14px; border-radius:10px; margin-bottom:18px; line-height:1.5;}
+  .banner b{color:#123a80;}
+  .stats{display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;}
+  .stat-card{background:#fff; border-radius:var(--radius); padding:16px; border-top:4px solid var(--gray-300); box-shadow:0 1px 2px rgba(0,0,0,0.04);}
+  .stat-card .icon{width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:14px; margin-bottom:10px;}
+  .stat-card .num{font-size:26px; font-weight:700; line-height:1;}
+  .stat-card .label{font-size:11px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.03em; margin-top:6px; font-weight:600;}
+  .stat-card .sub-label{font-size:11px; color:var(--gray-500); margin-top:1px;}
+
+  .budget-card{border-radius:var(--radius); padding:18px 20px; margin-bottom:18px; box-shadow:0 1px 2px rgba(0,0,0,0.04); border:1px solid var(--gray-200);}
+  .budget-card .bc-head{display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:14px;}
+  .budget-card .bc-title{font-size:13px; text-transform:uppercase; letter-spacing:.03em; font-weight:700; color:var(--gray-700);}
+  .budget-card .bc-sub{font-size:12px; margin-top:3px; color:var(--gray-500);}
+  .budget-card .bc-edit{border:none; background:var(--gray-100); color:var(--gray-700); cursor:pointer; font-size:12px; padding:7px 12px; border-radius:8px; font-weight:600; flex-shrink:0;}
+  .budget-card .bc-edit:hover{filter:brightness(0.97);}
+  .bc-cols{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  .bc-col{border-radius:12px; padding:14px;}
+  .bc-col .bc-col-label{font-size:11px; text-transform:uppercase; letter-spacing:.03em; font-weight:700; margin-bottom:8px;}
+  .bc-col .bc-row{display:flex; justify-content:space-between; font-size:12px; color:var(--gray-500); margin-bottom:2px;}
+  .bc-col .bc-row:nth-of-type(2){margin-bottom:8px;}
+  .bc-col .bc-row .bc-val{font-weight:600; color:var(--gray-700);}
+  .bc-col .bc-var{font-size:16px; font-weight:800;}
+  .bc-col .bc-note{font-size:11px; opacity:.85;}
+  .grid-main{display:grid; grid-template-columns:1.1fr 1.3fr 1.1fr; gap:16px; margin-bottom:18px;}
+  .card{background:#fff; border-radius:var(--radius); padding:18px; box-shadow:0 1px 2px rgba(0,0,0,0.04);}
+  .card h3{margin:0 0 2px; font-size:14px;}
+  .card .card-sub{font-size:11.5px; color:var(--gray-500); margin-bottom:14px;}
+  .donut-wrap{display:flex; align-items:center; gap:18px;}
+  .donut-wrap canvas{max-width:130px; max-height:130px;}
+  .legend{flex:1; font-size:12.5px;}
+  .legend-row{display:flex; align-items:center; justify-content:space-between; padding:4px 0;}
+  .legend-row .dot{width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:7px;}
+  .legend-row .name{color:var(--gray-700); display:flex; align-items:center;}
+  .legend-row .val{font-weight:700; color:var(--gray-900);}
+  .pipeline-row{margin-bottom:12px;}
+  .pipeline-row .top{display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px;}
+  .pipeline-row .top .name{color:var(--gray-700); font-weight:600;}
+  .pipeline-row .top .val{font-weight:700; color:var(--gray-900);}
+  .bar-bg{background:var(--gray-100); border-radius:6px; height:7px; overflow:hidden;}
+  .bar-fill{height:100%; border-radius:6px;}
+  .attn-item{border-radius:10px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; border-left:3px solid var(--pink);}
+  .attn-item.blocked{background:var(--pink-light);}
+  .attn-item.onhold{background:var(--orange-light); border-left-color:var(--orange);}
+  .attn-item.overdue{background:var(--pink-light);}
+  .attn-item .top{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
+  .attn-item .title{font-weight:700; color:var(--gray-900);}
+  .badge{font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; text-transform:uppercase;}
+  .badge.blocked{background:var(--pink); color:#fff;}
+  .badge.onhold{background:var(--orange); color:#fff;}
+  .attn-item .meta{color:var(--gray-500);}
+  .empty-note{color:var(--gray-500); font-size:12.5px; padding:8px 0;}
+  .pillars{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:14px; margin-bottom:18px;}
+  .pillar-card{background:#fff; border-radius:var(--radius); padding:16px; border-top:4px solid var(--blue); box-shadow:0 1px 2px rgba(0,0,0,0.04);}
+  .pillar-top{display:flex; align-items:center; gap:12px;}
+  .ring{width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .ring-inner{width:38px; height:38px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
+  .pillar-name{font-size:13px; font-weight:700; color:var(--gray-900); margin-top:10px;}
+  .pillar-count{font-size:11.5px; color:var(--gray-500);}
+  .table-card{background:#fff; border-radius:var(--radius); padding:18px; box-shadow:0 1px 2px rgba(0,0,0,0.04);}
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  th{text-align:left; color:var(--gray-500); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.02em; padding:8px 10px; border-bottom:1px solid var(--gray-200);}
+  td{padding:9px 10px; border-bottom:1px solid var(--gray-100); color:var(--gray-700); vertical-align:middle;}
+  tr:hover td{background:var(--gray-50);}
+  .pill{font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; display:inline-block;}
+  .row-actions{display:flex; gap:6px;}
+  .icon-btn{border:none; background:transparent; cursor:pointer; font-size:13px; padding:4px; color:var(--gray-500); border-radius:6px;}
+  .icon-btn:hover{background:var(--gray-100); color:var(--gray-900);}
+  .owner-tag{font-weight:600;}
+  .modal-overlay{display:none; position:fixed; inset:0; background:rgba(17,24,39,0.45); z-index:50; align-items:center; justify-content:center;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:#fff; border-radius:16px; padding:24px; width:420px; max-width:92vw; max-height:88vh; overflow-y:auto;}
+  .modal.wide{width:520px;}
+  .modal h2{margin:0 0 16px; font-size:16px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block; font-size:11.5px; font-weight:700; color:var(--gray-700); margin-bottom:5px; text-transform:uppercase; letter-spacing:.02em;}
+  .field input, .field select, .field textarea{width:100%; padding:8px 10px; border:1px solid var(--gray-200); border-radius:8px; font-size:13px; font-family:inherit; color:var(--gray-900);}
+  .field textarea{resize:vertical; min-height:56px;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
+  .modal-actions .btn.danger{color:var(--pink); border-color:#f6c9d5;}
+  .footer-note{text-align:center; font-size:11px; color:var(--gray-500); margin-top:20px;}
+  .manage-section{margin-bottom:18px;}
+  .manage-section h4{font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--gray-500); margin:0 0 8px;}
+  .manage-row{display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--gray-100);}
+  .manage-row .swatch{width:12px; height:12px; border-radius:4px; flex-shrink:0;}
+  .manage-row input{flex:1; border:1px solid transparent; background:transparent; padding:4px 6px; border-radius:6px; font-size:13px;}
+  .manage-row input:focus{border-color:var(--gray-200); background:#fff;}
+  .manage-row .count{font-size:11px; color:var(--gray-500); flex-shrink:0;}
+  .manage-row .del{border:none; background:transparent; color:var(--gray-500); cursor:pointer; font-size:14px; padding:2px 6px; border-radius:6px; flex-shrink:0;}
+  .manage-row .del:hover{background:var(--pink-light); color:var(--pink);}
+  .add-row{display:flex; gap:8px; margin-top:8px;}
+  .add-row input{flex:1; padding:7px 10px; border:1px solid var(--gray-200); border-radius:8px; font-size:13px;}
+  .add-row button{white-space:nowrap;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">FT</div>
+    <div>
+      <h1>Family Focus Tracker</h1>
+      <div class="sub" id="dateSub">Weekly review · activities, owners & priorities</div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn" onclick="openManage()">⚙ Manage areas &amp; badges</button>
+    <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Import CSV</button>
+    <input type="file" id="importFile" accept=".csv" style="display:none" onchange="importCSV(event)">
+    <button class="btn" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn primary" onclick="openModal()">+ New Activity</button>
+  </div>
+</div>
+
+<div class="banner">
+  <b>Loaded with your real backlog</b> — synced from Microsoft To Do (82 items) plus manually tracked activities, sorted into 6 focus areas, plus a Budget vs Actual panel synced from PocketSmith's Income &amp; Expense report. Edit, add, or delete below — changes save automatically in this browser. This file also lives in your OneDrive so you and Carine can each open your own copy; re-import the latest CSV export whenever you want to refresh it with new synced items. Anything left untouched for 2+ weeks automatically flips to <b>Stalled</b> so it doesn't quietly fall off the radar.
+</div>
+
+<div class="stats" id="statsRow"></div>
+
+<div class="budget-card" id="budgetCard">
+  <div class="bc-head">
+    <div>
+      <div class="bc-title" id="bcTitle">Budget vs Actual — Month to Date</div>
+      <div class="bc-sub" id="bcAsOf">--</div>
+    </div>
+    <div style="display:flex; gap:8px; flex-shrink:0;">
+      <a class="bc-edit" href="https://my.pocketsmith.com/income_expense" target="_blank" rel="noopener" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px;">↗ View in PocketSmith</a>
+      <button class="bc-edit" onclick="openBudgetModal()">Edit</button>
+    </div>
+  </div>
+  <div class="bc-cols" id="bcCols"></div>
+</div>
+
+<div class="grid-main">
+  <div class="card">
+    <h3>Status mix</h3>
+    <div class="card-sub">All activities, by status</div>
+    <div class="donut-wrap">
+      <canvas id="statusDonut"></canvas>
+      <div class="legend" id="donutLegend"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Pipeline by status</h3>
+    <div class="card-sub">Where everything stands right now</div>
+    <div id="pipelineList"></div>
+  </div>
+  <div class="card">
+    <h3>⚠ Needs attention</h3>
+    <div class="card-sub">Blocked, on hold, or overdue</div>
+    <div id="attentionList"></div>
+  </div>
+</div>
+
+<div class="pillars" id="pillarCards"></div>
+
+<div class="table-card">
+  <h3 style="margin-bottom:14px;">All activities</h3>
+  <table>
+    <thead><tr><th>Activity</th><th>Focus area</th><th>Owner</th><th>Priority</th><th>Status</th><th>Due</th><th></th></tr></thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<div class="footer-note">Family Focus Tracker · data stored locally in this browser · last refreshed <span id="refreshedAt"></span></div>
+
+<!-- Add/Edit Activity Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalTitle">New Activity</h2>
+    <input type="hidden" id="editId">
+    <div class="field"><label>Title</label><input id="f-title" type="text" placeholder="e.g. Book summer camp for kids"></div>
+    <div class="field"><label>Focus area</label><select id="f-pillar" onchange="handleAddInline(this,'pillar')"></select></div>
+    <div class="field"><label>Owner</label><select id="f-owner" onchange="handleAddInline(this,'owner')"></select></div>
+    <div class="field"><label>Priority</label>
+      <select id="f-priority"><option>High</option><option selected>Medium</option><option>Low</option></select>
+    </div>
+    <div class="field"><label>Status</label><select id="f-status" onchange="handleAddInline(this,'status')"></select></div>
+    <div class="field"><label>Due date</label><input id="f-due" type="date"></div>
+    <div class="field"><label>Notes</label><textarea id="f-notes" placeholder="Optional context..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn danger" id="deleteBtn" style="display:none;" onclick="deleteActivity()">Delete</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" onclick="saveActivity()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage Focus Areas / Statuses / Owners Modal -->
+<div class="modal-overlay" id="manageOverlay">
+  <div class="modal wide">
+    <h2>Manage focus areas &amp; badges</h2>
+    <div class="manage-section">
+      <h4>Focus areas</h4>
+      <div id="manage-pillar-list"></div>
+      <div class="add-row"><input id="add-pillar-input" placeholder="New focus area name"><button class="btn primary" onclick="addItem('pillar')">Add</button></div>
+    </div>
+    <div class="manage-section">
+      <h4>Status badges</h4>
+      <div id="manage-status-list"></div>
+      <div class="add-row"><input id="add-status-input" placeholder="New status/badge name"><button class="btn primary" onclick="addItem('status')">Add</button></div>
+    </div>
+    <div class="manage-section">
+      <h4>Owners</h4>
+      <div id="manage-owner-list"></div>
+      <div class="add-row"><input id="add-owner-input" placeholder="New owner name"><button class="btn primary" onclick="addItem('owner')">Add</button></div>
+    </div>
+    <div class="modal-actions"><button class="btn primary" onclick="closeManage()">Done</button></div>
+  </div>
+</div>
+
+<!-- Budget Edit Modal -->
+<div class="modal-overlay" id="budgetOverlay">
+  <div class="modal">
+    <h2>Edit Budget vs Actual (Month to Date)</h2>
+    <div class="field"><label>As-of label</label><input id="bg-asof" type="text" placeholder="e.g. Jul 24, 2026 (MTD)"></div>
+    <div class="field"><label>Income — Budgeted MTD ($)</label><input id="bg-inc-budgeted" type="number" step="0.01"></div>
+    <div class="field"><label>Income — Actual MTD ($)</label><input id="bg-inc-actual" type="number" step="0.01"></div>
+    <div class="field"><label>Expenses — Budgeted MTD ($)</label><input id="bg-exp-budgeted" type="number" step="0.01"></div>
+    <div class="field"><label>Expenses — Actual MTD ($)</label><input id="bg-exp-actual" type="number" step="0.01"></div>
+    <div class="field"><label>Rollover credit ($)</label><input id="bg-rollover" type="number" step="0.01"></div>
+    <div class="field" style="font-size:11.5px; color:var(--gray-500); text-transform:none; letter-spacing:normal; font-weight:400;">Pull these from PocketSmith's Income &amp; Expense report with the date range set from the 1st of the month through today.</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeBudgetModal()">Cancel</button>
+      <button class="btn primary" onclick="saveBudget()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script>
+const ACT_KEY = 'familyFocusTracker_activities_v3';
+const PILLAR_KEY = 'familyFocusTracker_pillars_v3';
+const STATUS_KEY = 'familyFocusTracker_statuses_v3';
+const OWNER_KEY = 'familyFocusTracker_owners_v3';
+
+const PALETTE = [
+  {main:'#12a894', light:'#e4f7f4'}, {main:'#2564cf', light:'#e8f0fd'},
+  {main:'#e0245e', light:'#fdeaef'}, {main:'#7c5cfc', light:'#f1edfe'},
+  {main:'#f59e0b', light:'#fef3e0'}, {main:'#0ea5e9', light:'#e0f4fe'},
+  {main:'#65a30d', light:'#eef7e0'}, {main:'#db2777', light:'#fce7f3'}
+];
+const PRIORITY_COLORS = {
+  'High': {main:'#e0245e', light:'#fdeaef'},
+  'Medium': {main:'#f59e0b', light:'#fef3e0'},
+  'Low': {main:'#6b7280', light:'#eef0f5'}
+};
+
+function loadList(key, defaults){
+  try{ const raw = localStorage.getItem(key); if(raw) return JSON.parse(raw); }catch(e){}
+  localStorage.setItem(key, JSON.stringify(defaults));
+  return defaults;
+}
+function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); }
+
+const DEFAULT_PILLARS = [
+  {name:'Home & Household', main:'#12a894', light:'#e4f7f4'},
+  {name:'Finances & Budgeting', main:'#2564cf', light:'#e8f0fd'},
+  {name:'Kids & Family', main:'#e0245e', light:'#fdeaef'},
+  {name:'Health & Travel', main:'#7c5cfc', light:'#f1edfe'},
+  {name:'Career & Professional', main:'#f59e0b', light:'#fef3e0'},
+  {name:'Personal Growth & Admin', main:'#0ea5e9', light:'#e0f4fe'}
+];
+const DEFAULT_STATUSES = [
+  {name:'In Progress', color:'#2564cf'},
+  {name:'Blocked', color:'#e0245e'},
+  {name:'Stalled', color:'#9ca3af'},
+  {name:'Complete', color:'#12a894'}
+];
+const DEFAULT_OWNERS = ['Allen','Carine','Joint'];
+
+function seedData(){
+  return [
+    {id:1, title:'Book dentist appointment for kids', pillar:'Kids & Family', owner:'Allen', priority:'High', status:'In Progress', due:'2026-07-27', notes:'Need to check insurance coverage first'},
+    {id:2, title:'Confirm summer camp registration for kids', pillar:'Kids & Family', owner:'Allen', priority:'High', status:'In Progress', due:'2026-07-27', notes:'Register before spots fill up - check with Carine on dates'},
+    {id:100, title:'Fitness - envoies des voeux manuscrits', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:101, title:'Fitness - reconnectes avec la France pour le job de Ssm m2', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-27', notes:''},
+    {id:102, title:'Fitness - Haas reunion', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-06', notes:''},
+    {id:103, title:'Fitness - Financial Health - Finalize 529s funding and recurring contributions and cash not used', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-08', notes:''},
+    {id:104, title:'Fitness - Experience et avantages avec amex', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-19', notes:''},
+    {id:105, title:'Family - Observes Carine pour ses cadeaux d\'anniversaire et de Noel', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-31', notes:''},
+    {id:106, title:'Family - Call Les Oncles/Neveux', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-23', notes:''},
+    {id:107, title:'A - MSFT', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-10', notes:''},
+    {id:108, title:'DIY - Colmater fuite salon', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:109, title:'Ordi - aller voir Monique et Michel en france', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-12', notes:''},
+    {id:110, title:'Ordi - Check mon compte Binance avec des achats bi-mensuels de Bitcoin', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-12', notes:''},
+    {id:111, title:'Ordi - Financial Health Augmentes contribution ESPP et retraite de 7 a 9%', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-21', notes:''},
+    {id:112, title:'Fitness - Gouttieres et french Drain', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-19', notes:''},
+    {id:113, title:'Ordi - Increase my contributions to ESPP and 401K', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-01', notes:''},
+    {id:114, title:'Ordi - Call Saurabh', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'Stalled', due:'2025-07-09', notes:'Overdue'},
+    {id:115, title:'Ordi - Tradition Back to School', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2027-03-17', notes:''},
+    {id:116, title:'Tomorrow installes tapis dans coffre de ma voiture', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-14', notes:''},
+    {id:117, title:'Installes rideau de douche sdb des enfants', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-16', notes:''},
+    {id:118, title:'Set up time with Jarel McAdoo', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-18', notes:''},
+    {id:119, title:'Ask Matt to set up bi-weekly office hour with Real Page, sync with Chris/Harish', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-20', notes:''},
+    {id:120, title:'Consumption reviews individually - Poke on coverage for workloads, balanced business, Q3 Uncommitted to Committed conversion (target 20%)', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-22', notes:''},
+    {id:121, title:'AI 102 certificat', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-24', notes:''},
+    {id:122, title:'Sebastien', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-26', notes:''},
+    {id:123, title:'Lasik Exams', pillar:'Health & Travel', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-28', notes:''},
+    {id:124, title:'Cosmetics - retire le grains de beaute', pillar:'Health & Travel', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-30', notes:''},
+    {id:125, title:'Soccer vs golf - Noah', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-02', notes:''},
+    {id:126, title:'Golftec', pillar:'Health & Travel', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-04', notes:''},
+    {id:127, title:'Feedback about Donna', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-06', notes:''},
+    {id:128, title:'Daily tracking of ACR/ADS', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-08', notes:''},
+    {id:129, title:'Phone - white and black tee shirt amz', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-10', notes:''},
+    {id:130, title:'Morning routine', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-12', notes:''},
+    {id:131, title:'Ordi - eye exam pour Noah', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-12-14', notes:''},
+    {id:132, title:'Golf pour Eva', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-14', notes:''},
+    {id:133, title:'Pull reports from Mint', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-16', notes:''},
+    {id:134, title:'IU - Analytics GTM', pillar:'Career & Professional', owner:'Allen', priority:'High', status:'In Progress', due:'2026-10-18', notes:''},
+    {id:135, title:'Ordi - Schedule Noah\'s soccer tryouts at Martinez', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-20', notes:''},
+    {id:136, title:'Ordi - Note taking device', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-22', notes:''},
+    {id:137, title:'Ordi - Fete des meres', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2027-04-15', notes:''},
+    {id:138, title:'Ordi - Creative strategies to pay for college', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-12-15', notes:''},
+    {id:139, title:'Fitness - Go for an IV at Prime IV (5 left as of 12/15)', pillar:'Health & Travel', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-19', notes:''},
+    {id:140, title:'Ordi - Write my own Connect', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-24', notes:''},
+    {id:141, title:'Ordi - Set up Cohort for new SSPs for Kirk and mentorship from a senior SSP', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-26', notes:''},
+    {id:142, title:'Ordi - Find ways for Kirk to be more on cameras or conferences', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-28', notes:''},
+    {id:143, title:'Payoff auto loan', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-20', notes:''},
+    {id:144, title:'Ordi - ajuster mon portefeuille', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-10-30', notes:''},
+    {id:145, title:'Ordi - cheval membership', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-01', notes:''},
+    {id:146, title:'Ordi - Tradition fin ete avant de prendre rythme scolaire', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-03', notes:''},
+    {id:147, title:'Ordi - down Jones depenses de $38', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-05', notes:''},
+    {id:148, title:'Ordi - point financier avec Carine', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-07', notes:''},
+    {id:149, title:'Roderick L Barnes', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-09', notes:''},
+    {id:150, title:'Ordi - Prep for ATU 4 review', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-11', notes:''},
+    {id:151, title:'Ordi - Scrub', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-13', notes:''},
+    {id:152, title:'Buy new standing desk', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-15', notes:''},
+    {id:153, title:'Ordi - Free things at Microsoft', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-19', notes:''},
+    {id:154, title:'Ordi - Pipeline snapshot due on 10/5', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-17', notes:''},
+    {id:155, title:'Microsoft - Post announcement for Mitch\'s baby and announce coverage', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-19', notes:''},
+    {id:156, title:'Microsoft - Friction with CSA (Jonathan/Adam)', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-21', notes:''},
+    {id:157, title:'Fitness - Voeux de bonnes annees', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-11-23', notes:''},
+    {id:158, title:'Fitness - comment s\'assurer que Carine recoit les SMS pour changement sur comptes bancaires', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-27', notes:''},
+    {id:159, title:'Horizon - tele prompteur app', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:160, title:'Fitness - techniques de whiteboard', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:161, title:'Cancel USPS PO box renewal', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-19', notes:''},
+    {id:162, title:'Installer camera sur ordi', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:163, title:'Microsoft - MFM discrete podcast with customers and partners', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-20', notes:''},
+    {id:164, title:'Microsoft - stories from my accounts', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-20', notes:''},
+    {id:165, title:'Fitness - comment sauvegarder nos passwords safely', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:166, title:'MSFT - Sanaz reach out to her', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-20', notes:''},
+    {id:167, title:'Fitness - Kedge jury', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:168, title:'Fitness - Reinstate $583 transfer on the 1st of the month', pillar:'Finances & Budgeting', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-08-01', notes:''},
+    {id:169, title:'Fitness - Touch base with my network', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-20', notes:''},
+    {id:170, title:'Microsoft - earning calls schedule', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-09-29', notes:''},
+    {id:171, title:'Fitness - Set up labs with Myrtle Ridge', pillar:'Health & Travel', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-21', notes:''},
+    {id:172, title:'Prevois prochain voyages au budget', pillar:'Health & Travel', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:173, title:'Horizon - Fais ta feuille excel avec tes objectifs', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-20', notes:''},
+    {id:174, title:'Mon plan a 5 ans', pillar:'Personal Growth & Admin', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-20', notes:''},
+    {id:175, title:'Rebuild my resume', pillar:'Career & Professional', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-28', notes:''},
+    {id:176, title:'Family - Summer camp 2027', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-26', notes:''},
+    {id:177, title:'Pick up my contact lenses', pillar:'Health & Travel', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-20', notes:''},
+    {id:178, title:'Fitness - Vendre la machine de traction', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-27', notes:''},
+    {id:179, title:'Fitness - Nettoyer mes chaussures', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-27', notes:''},
+    {id:180, title:'Noah sport for next year', pillar:'Kids & Family', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-30', notes:''},
+    {id:181, title:'Fitness - Detroit - recapitules et secure un avocat', pillar:'Home & Household', owner:'Allen', priority:'Medium', status:'In Progress', due:'2026-07-21', notes:''}
+  ];
+}
+
+function normalizeData(list){
+  // Backfill a "last touched" date on any activity that doesn't have one yet
+  // (e.g. freshly seeded/imported items) so the stale-tracker below has something to compare against.
+  const today = new Date().toISOString().slice(0,10);
+  list.forEach(a=>{ if(!a.updated) a.updated = today; });
+  return list;
+}
+
+let data = normalizeData(loadList(ACT_KEY, seedData()));
+let pillars = loadList(PILLAR_KEY, DEFAULT_PILLARS);
+let statuses = loadList(STATUS_KEY, DEFAULT_STATUSES);
+let owners = loadList(OWNER_KEY, DEFAULT_OWNERS);
+
+const BUDGET_KEY = 'familyFocusTracker_budget_v2';
+const DEFAULT_BUDGET = {
+  asOf: 'Jul 1 – 24, 2026 (MTD)',
+  income: { budgeted: 5826.00, actual: 4248.56 },
+  expense: { budgeted: 13769.87, actual: 10572.82 },
+  rollover: 101.72
+};
+let budget = loadList(BUDGET_KEY, DEFAULT_BUDGET);
+
+function renderBudgetCard(){
+  const inc = budget.income || {budgeted:0, actual:0};
+  const exp = budget.expense || {budgeted:0, actual:0};
+  const rollover = Number(budget.rollover) || 0;
+
+  const incVar = inc.actual - inc.budgeted;          // + = ahead of income target
+  const expVar = exp.budgeted - exp.actual;           // + = under budget (good)
+  const netBudgeted = inc.budgeted - exp.budgeted;
+  const netActual = inc.actual - exp.actual;
+  const netVar = (netActual - netBudgeted) + rollover; // + = favorable to plan
+
+  const fmt = (n)=> '$' + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
+  const fmtSigned = (n)=> (n<0?'-':'') + fmt(n);
+
+  const cols = [
+    { label:'Income', budgeted: inc.budgeted, actual: inc.actual, variance: incVar,
+      note: incVar>=0 ? 'ahead of income target' : 'behind income target' },
+    { label:'Expenses', budgeted: exp.budgeted, actual: exp.actual, variance: expVar,
+      note: expVar>=0 ? 'under budget' : 'over budget' },
+    { label:'Net', budgeted: netBudgeted, actual: netActual, variance: netVar,
+      note: netVar>=0 ? 'ahead of plan' : 'behind plan' }
+  ];
+
+  const rolloverNote = rollover ? ` · $${rollover.toLocaleString()} rollover credit included in Net` : '';
+  document.getElementById('bcAsOf').textContent = (budget.asOf || 'Month to date') + rolloverNote;
+
+  document.getElementById('bcCols').innerHTML = cols.map(c=>{
+    const good = c.variance >= 0;
+    const mainColor = good ? '#12a894' : '#e0245e';
+    const lightColor = good ? '#e4f7f4' : '#fdeaef';
+    return `<div class="bc-col" style="background:${lightColor}; border:1px solid ${mainColor}33;">
+      <div class="bc-col-label" style="color:${mainColor}">${c.label}</div>
+      <div class="bc-row"><span>Budget</span><span class="bc-val">${fmtSigned(c.budgeted)}</span></div>
+      <div class="bc-row"><span>Actual</span><span class="bc-val">${fmtSigned(c.actual)}</span></div>
+      <div class="bc-var" style="color:${mainColor}">${good?'+':'-'}${fmt(c.variance)}</div>
+      <div class="bc-note" style="color:${mainColor}">${c.note}</div>
+    </div>`;
+  }).join('');
+}
+
+function openBudgetModal(){
+  document.getElementById('bg-asof').value = budget.asOf || '';
+  document.getElementById('bg-inc-budgeted').value = budget.income.budgeted;
+  document.getElementById('bg-inc-actual').value = budget.income.actual;
+  document.getElementById('bg-exp-budgeted').value = budget.expense.budgeted;
+  document.getElementById('bg-exp-actual').value = budget.expense.actual;
+  document.getElementById('bg-rollover').value = budget.rollover;
+  document.getElementById('budgetOverlay').classList.add('open');
+}
+function closeBudgetModal(){ document.getElementById('budgetOverlay').classList.remove('open'); }
+function saveBudget(){
+  budget = {
+    asOf: document.getElementById('bg-asof').value.trim() || 'Month to date',
+    income: {
+      budgeted: parseFloat(document.getElementById('bg-inc-budgeted').value) || 0,
+      actual: parseFloat(document.getElementById('bg-inc-actual').value) || 0
+    },
+    expense: {
+      budgeted: parseFloat(document.getElementById('bg-exp-budgeted').value) || 0,
+      actual: parseFloat(document.getElementById('bg-exp-actual').value) || 0
+    },
+    rollover: parseFloat(document.getElementById('bg-rollover').value) || 0
+  };
+  saveList(BUDGET_KEY, budget);
+  closeBudgetModal();
+  renderBudgetCard();
+}
+document.getElementById('budgetOverlay').addEventListener('click', (e)=>{ if(e.target.id==='budgetOverlay') closeBudgetModal(); });
+
+function persistAll(){ saveList(ACT_KEY,data); saveList(PILLAR_KEY,pillars); saveList(STATUS_KEY,statuses); saveList(OWNER_KEY,owners); }
+
+const STALE_DAYS = 14;
+function applyAutoStall(){
+  const now = new Date(); now.setHours(0,0,0,0);
+  let changed = false;
+  data.forEach(a=>{
+    if(a.status === 'In Progress' && a.updated){
+      const upd = new Date(a.updated+'T00:00:00');
+      const days = Math.round((now-upd)/86400000);
+      if(days >= STALE_DAYS){ a.status = 'Stalled'; changed = true; }
+    }
+  });
+  if(changed) saveList(ACT_KEY, data);
+}
+
+function pillarByName(name){ return pillars.find(p=>p.name===name) || {name, main:'#6b7280', light:'#eef0f5'}; }
+function statusByName(name){ return statuses.find(s=>s.name===name) || {name, color:'#6b7280'}; }
+
+function daysUntil(dueStr){ const due = new Date(dueStr+'T00:00:00'); const now = new Date(); now.setHours(0,0,0,0); return Math.round((due-now)/86400000); }
+function fmtDate(dueStr){ const dt = new Date(dueStr+'T00:00:00'); return dt.toLocaleDateString('en-US',{month:'short', day:'numeric'}); }
+function escapeHtml(str){ const div = document.createElement('div'); div.textContent = str || ''; return div.innerHTML; }
+
+let donutChart = null;
+
+function render(){
+  applyAutoStall();
+  populateSelects();
+  renderBudgetCard();
+  renderStats(); renderDonut(); renderPipeline(); renderAttention(); renderPillars(); renderTable();
+  document.getElementById('refreshedAt').textContent = new Date().toLocaleString('en-US',{hour:'numeric',minute:'2-digit',month:'short',day:'numeric'});
+  document.getElementById('dateSub').textContent = `Weekly review · ${data.length} activities across ${pillars.length} focus areas`;
+}
+
+function populateSelects(){
+  const pSel = document.getElementById('f-pillar');
+  const cur1 = pSel.value;
+  pSel.innerHTML = pillars.map(p=>`<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('') + `<option value="__add__">➕ Add new focus area...</option>`;
+  if(pillars.some(p=>p.name===cur1)) pSel.value = cur1;
+
+  const oSel = document.getElementById('f-owner');
+  const cur2 = oSel.value;
+  oSel.innerHTML = owners.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('') + `<option value="__add__">➕ Add new owner...</option>`;
+  if(owners.includes(cur2)) oSel.value = cur2;
+
+  const sSel = document.getElementById('f-status');
+  const cur3 = sSel.value;
+  sSel.innerHTML = statuses.map(s=>`<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('') + `<option value="__add__">➕ Add new status/badge...</option>`;
+  if(statuses.some(s=>s.name===cur3)) sSel.value = cur3;
+}
+
+function handleAddInline(selectEl, kind){
+  if(selectEl.value !== '__add__') return;
+  const name = prompt(`Name for the new ${kind==='pillar'?'focus area':kind}:`);
+  if(!name || !name.trim()){ selectEl.selectedIndex = 0; return; }
+  const clean = name.trim();
+  if(kind==='pillar'){
+    if(!pillars.some(p=>p.name===clean)){ const c = PALETTE[pillars.length % PALETTE.length]; pillars.push({name:clean, main:c.main, light:c.light}); saveList(PILLAR_KEY,pillars); }
+  } else if(kind==='status'){
+    if(!statuses.some(s=>s.name===clean)){ const c = PALETTE[statuses.length % PALETTE.length]; statuses.push({name:clean, color:c.main}); saveList(STATUS_KEY,statuses); }
+  } else if(kind==='owner'){
+    if(!owners.includes(clean)){ owners.push(clean); saveList(OWNER_KEY,owners); }
+  }
+  populateSelects();
+  selectEl.value = clean;
+}
+
+function renderStats(){
+  const total = data.length;
+  const a1 = owners[0], a2 = owners[1], a3 = owners[2];
+  const countFor = (o)=> o ? data.filter(a=>a.owner===o && a.status!=='Complete').length : 0;
+  const stuck = data.filter(a=>a.status==='Blocked' || a.status==='Stalled').length;
+  const cards = [
+    {num:total, label:'Activities', sub:`across ${pillars.length} focus areas`, color:'#111827', icon:'▤'},
+    {num:countFor(a1), label:a1?`Needs ${a1}`:'Needs owner', sub:'next step is theirs', color:'#2564cf', icon:'●'},
+    {num:countFor(a2), label:a2?`Needs ${a2}`:'Needs owner', sub:'next step is theirs', color:'#7c5cfc', icon:'●'},
+    {num:countFor(a3), label:a3?a3:'Joint', sub:'shared next step', color:'#12a894', icon:'◆'},
+    {num:stuck, label:'Stalled / Blocked', sub:'needs a decision', color:'#e0245e', icon:'!'},
+  ];
+  document.getElementById('statsRow').innerHTML = cards.map(c=>`
+    <div class="stat-card" style="border-top-color:${c.color}">
+      <div class="icon" style="background:${c.color}1a; color:${c.color}">${c.icon}</div>
+      <div class="num">${c.num}</div>
+      <div class="label">${c.label}</div>
+      <div class="sub-label">${c.sub}</div>
+    </div>`).join('');
+}
+
+function renderDonut(){
+  const counts = {}; statuses.forEach(s=>counts[s.name]=0);
+  data.forEach(a=>{ if(counts[a.status]===undefined) counts[a.status]=0; counts[a.status]++; });
+  const labels = Object.keys(counts).filter(k=>counts[k]>0);
+  const values = labels.map(l=>counts[l]);
+  const colors = labels.map(l=>statusByName(l).color);
+  const ctx = document.getElementById('statusDonut').getContext('2d');
+  if(donutChart) donutChart.destroy();
+  donutChart = new Chart(ctx, { type:'doughnut', data:{labels, datasets:[{data:values, backgroundColor:colors, borderWidth:2, borderColor:'#fff'}]},
+    options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{display:false}, tooltip:{enabled:true}}} });
+  document.getElementById('donutLegend').innerHTML = labels.map((l,i)=>`
+    <div class="legend-row"><span class="name"><span class="dot" style="background:${colors[i]}"></span>${escapeHtml(l)}</span><span class="val">${values[i]}</span></div>`).join('');
+}
+
+function renderPipeline(){
+  const counts = {}; statuses.forEach(s=>counts[s.name]=0);
+  data.forEach(a=>{ if(counts[a.status]===undefined) counts[a.status]=0; counts[a.status]++; });
+  const max = Math.max(1, ...Object.values(counts));
+  document.getElementById('pipelineList').innerHTML = Object.entries(counts).map(([status,count])=>`
+    <div class="pipeline-row">
+      <div class="top"><span class="name">${escapeHtml(status)}</span><span class="val">${count}</span></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${(count/max*100)}%; background:${statusByName(status).color}"></div></div>
+    </div>`).join('');
+}
+
+function renderAttention(){
+  const flagged = data.filter(a=>{ if(a.status==='Complete') return false; if(a.status==='Blocked' || a.status==='Stalled') return true; return daysUntil(a.due) < 0; }).sort((a,b)=>daysUntil(a.due)-daysUntil(b.due));
+  if(flagged.length===0){ document.getElementById('attentionList').innerHTML = `<div class="empty-note">Nothing blocked, stalled, or overdue right now.</div>`; return; }
+  document.getElementById('attentionList').innerHTML = flagged.slice(0,6).map(a=>{
+    const overdue = daysUntil(a.due) < 0;
+    const cls = a.status==='Blocked' ? 'blocked' : (a.status==='Stalled' ? 'onhold' : 'overdue');
+    const badgeCls = a.status==='Stalled' ? 'onhold' : 'blocked';
+    const badgeText = overdue && a.status!=='Blocked' && a.status!=='Stalled' ? 'Overdue' : a.status;
+    return `<div class="attn-item ${cls}"><div class="top"><span class="title">${escapeHtml(a.title)}</span><span class="badge ${badgeCls}">${escapeHtml(badgeText)}</span></div><div class="meta">${escapeHtml(a.pillar)} · ${escapeHtml(a.owner)} · due ${fmtDate(a.due)}</div></div>`;
+  }).join('');
+}
+
+function renderPillars(){
+  document.getElementById('pillarCards').innerHTML = pillars.map(p=>{
+    const items = data.filter(a=>a.pillar===p.name);
+    const done = items.filter(a=>a.status==='Complete').length;
+    const pct = items.length ? Math.round(done/items.length*100) : 0;
+    const active = items.filter(a=>a.status!=='Complete').length;
+    return `<div class="pillar-card" style="border-top-color:${p.main}">
+      <div class="pillar-top">
+        <div class="ring" style="background:conic-gradient(${p.main} ${pct*3.6}deg, ${p.light} 0deg)"><div class="ring-inner" style="color:${p.main}">${pct}%</div></div>
+        <div><div class="pillar-name">${escapeHtml(p.name)}</div><div class="pillar-count">${items.length} activities</div></div>
+      </div>
+      <div class="pillar-count" style="margin-top:10px;">${active} active · ${done} done</div>
+    </div>`;
+  }).join('');
+}
+
+function renderTable(){
+  const sorted = [...data].sort((a,b)=> daysUntil(a.due)-daysUntil(b.due));
+  document.getElementById('tableBody').innerHTML = sorted.map(a=>{
+    const pc = PRIORITY_COLORS[a.priority] || PRIORITY_COLORS['Medium'];
+    const sc = statusByName(a.status).color;
+    const overdue = daysUntil(a.due) < 0 && a.status!=='Complete';
+    return `<tr>
+      <td><b>${escapeHtml(a.title)}</b>${a.notes ? `<div style="color:#9ca3af;font-size:11.5px;margin-top:2px;">${escapeHtml(a.notes)}</div>`:''}</td>
+      <td>${escapeHtml(a.pillar)}</td>
+      <td class="owner-tag">${escapeHtml(a.owner)}</td>
+      <td><span class="pill" style="background:${pc.light}; color:${pc.main}">${escapeHtml(a.priority)}</span></td>
+      <td><span class="pill" style="background:${sc}22; color:${sc}">${escapeHtml(a.status)}</span></td>
+      <td style="color:${overdue?'#e0245e':'inherit'}; font-weight:${overdue?'700':'400'}">${fmtDate(a.due)}${overdue?' (overdue)':''}</td>
+      <td><div class="row-actions"><button class="icon-btn" onclick="openModal(${a.id})" title="Edit">✎</button></div></td>
+    </tr>`;
+  }).join('');
+}
+
+// Add/Edit modal
+function openModal(id){
+  populateSelects();
+  const overlay = document.getElementById('modalOverlay');
+  document.getElementById('editId').value = id || '';
+  if(id){
+    const a = data.find(x=>x.id===id);
+    document.getElementById('modalTitle').textContent = 'Edit Activity';
+    document.getElementById('f-title').value = a.title;
+    document.getElementById('f-pillar').value = a.pillar;
+    document.getElementById('f-owner').value = a.owner;
+    document.getElementById('f-priority').value = a.priority;
+    document.getElementById('f-status').value = a.status;
+    document.getElementById('f-due').value = a.due;
+    document.getElementById('f-notes').value = a.notes || '';
+    document.getElementById('deleteBtn').style.display = 'inline-block';
+  } else {
+    document.getElementById('modalTitle').textContent = 'New Activity';
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-pillar').selectedIndex = 0;
+    document.getElementById('f-owner').selectedIndex = 0;
+    document.getElementById('f-priority').value = 'Medium';
+    document.getElementById('f-status').selectedIndex = 0;
+    const dt = new Date(); dt.setDate(dt.getDate()+7);
+    document.getElementById('f-due').value = dt.toISOString().slice(0,10);
+    document.getElementById('f-notes').value = '';
+    document.getElementById('deleteBtn').style.display = 'none';
+  }
+  overlay.classList.add('open');
+}
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
+
+function saveActivity(){
+  const title = document.getElementById('f-title').value.trim();
+  if(!title){ alert('Please enter a title.'); return; }
+  const idVal = document.getElementById('editId').value;
+  const payload = {
+    title,
+    pillar: document.getElementById('f-pillar').value,
+    owner: document.getElementById('f-owner').value,
+    priority: document.getElementById('f-priority').value,
+    status: document.getElementById('f-status').value,
+    due: document.getElementById('f-due').value,
+    notes: document.getElementById('f-notes').value.trim(),
+    updated: new Date().toISOString().slice(0,10)
+  };
+  if(idVal){ const idx = data.findIndex(x=>x.id===Number(idVal)); data[idx] = {...data[idx], ...payload}; }
+  else { const newId = data.length ? Math.max(...data.map(a=>a.id))+1 : 1; data.push({id:newId, ...payload}); }
+  persistAll(); closeModal(); render();
+}
+function deleteActivity(){
+  const idVal = Number(document.getElementById('editId').value);
+  if(!confirm('Delete this activity?')) return;
+  data = data.filter(a=>a.id!==idVal);
+  persistAll(); closeModal(); render();
+}
+
+function exportCSV(){
+  const headers = ['Title','Focus Area','Owner','Priority','Status','Due','Notes'];
+  const rows = data.map(a=>[a.title,a.pillar,a.owner,a.priority,a.status,a.due,a.notes||''].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a'); link.href = url; link.download = 'family_focus_tracker.csv';
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// --- CSV Import ---
+function parseCSVText(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; } else { inQuotes = false; }
+      } else { field += c; }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(field); field = ''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && text[i+1] === '\n') i++;
+        row.push(field); field = ''; rows.push(row); row = [];
+      } else { field += c; }
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r => !(r.length===1 && r[0]===''));
+}
+
+function importCSV(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const rows = parseCSVText(e.target.result);
+      if(rows.length < 2){ alert('That CSV file looks empty.'); return; }
+      const headers = rows[0].map(h => h.trim().toLowerCase());
+      const idx = {
+        title: headers.findIndex(h=>h==='title'),
+        pillar: headers.findIndex(h=>h==='focus area' || h==='pillar'),
+        owner: headers.findIndex(h=>h==='owner'),
+        priority: headers.findIndex(h=>h==='priority'),
+        status: headers.findIndex(h=>h==='status'),
+        due: headers.findIndex(h=>h==='due' || h==='due date'),
+        notes: headers.findIndex(h=>h==='notes')
+      };
+      if(idx.title === -1){ alert('Could not find a "Title" column in that CSV. Make sure the first row has column headers like Title, Focus Area, Owner, Priority, Status, Due, Notes.'); return; }
+      if(!confirm(`This will replace everything currently in the dashboard with ${rows.length-1} row(s) from "${file.name}". Continue?`)) return;
+
+      const newData = [];
+      for(let r=1; r<rows.length; r++){
+        const row = rows[r];
+        if(!row[idx.title] || !row[idx.title].trim()) continue;
+        const pillarName = idx.pillar>-1 && row[idx.pillar] ? row[idx.pillar].trim() : (pillars[0] ? pillars[0].name : 'Uncategorized');
+        const ownerName = idx.owner>-1 && row[idx.owner] ? row[idx.owner].trim() : (owners[0] || 'Unassigned');
+        const statusName = idx.status>-1 && row[idx.status] ? row[idx.status].trim() : (statuses[0] ? statuses[0].name : 'In Progress');
+        const priorityName = idx.priority>-1 && row[idx.priority] ? row[idx.priority].trim() : 'Medium';
+        const dueVal = idx.due>-1 && row[idx.due] ? row[idx.due].trim() : new Date().toISOString().slice(0,10);
+        const notesVal = idx.notes>-1 && row[idx.notes] ? row[idx.notes].trim() : '';
+
+        if(!pillars.some(p=>p.name===pillarName)){ const c = PALETTE[pillars.length % PALETTE.length]; pillars.push({name:pillarName, main:c.main, light:c.light}); }
+        if(!statuses.some(s=>s.name===statusName)){ const c = PALETTE[statuses.length % PALETTE.length]; statuses.push({name:statusName, color:c.main}); }
+        if(!owners.includes(ownerName)){ owners.push(ownerName); }
+
+        newData.push({
+          id: newData.length+1,
+          title: row[idx.title].trim(),
+          pillar: pillarName,
+          owner: ownerName,
+          priority: ['High','Medium','Low'].includes(priorityName) ? priorityName : 'Medium',
+          status: statusName,
+          due: /^\d{4}-\d{2}-\d{2}/.test(dueVal) ? dueVal.slice(0,10) : new Date().toISOString().slice(0,10),
+          notes: notesVal,
+          updated: new Date().toISOString().slice(0,10)
+        });
+      }
+      data = newData;
+      persistAll();
+      render();
+      alert(`Imported ${data.length} activities from "${file.name}".`);
+    } catch(err){
+      alert('Could not read that file as CSV. Error: ' + err.message);
+    } finally {
+      evt.target.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Manage modal
+function openManage(){ renderManage(); document.getElementById('manageOverlay').classList.add('open'); }
+function closeManage(){ document.getElementById('manageOverlay').classList.remove('open'); render(); }
+
+function renderManage(){
+  document.getElementById('manage-pillar-list').innerHTML = pillars.map((p,i)=>{
+    const n = data.filter(a=>a.pillar===p.name).length;
+    return `<div class="manage-row"><span class="swatch" style="background:${p.main}"></span>
+      <input value="${escapeHtml(p.name)}" onchange="renameItem('pillar',${i},this.value)">
+      <span class="count">${n} used</span>
+      <button class="del" onclick="removeItem('pillar',${i})" title="Delete">✕</button></div>`;
+  }).join('');
+  document.getElementById('manage-status-list').innerHTML = statuses.map((s,i)=>{
+    const n = data.filter(a=>a.status===s.name).length;
+    return `<div class="manage-row"><span class="swatch" style="background:${s.color}"></span>
+      <input value="${escapeHtml(s.name)}" onchange="renameItem('status',${i},this.value)">
+      <span class="count">${n} used</span>
+      <button class="del" onclick="removeItem('status',${i})" title="Delete">✕</button></div>`;
+  }).join('');
+  document.getElementById('manage-owner-list').innerHTML = owners.map((o,i)=>{
+    const n = data.filter(a=>a.owner===o).length;
+    return `<div class="manage-row"><span class="swatch" style="background:#9ca3af"></span>
+      <input value="${escapeHtml(o)}" onchange="renameOwner(${i},this.value)">
+      <span class="count">${n} used</span>
+      <button class="del" onclick="removeItem('owner',${i})" title="Delete">✕</button></div>`;
+  }).join('');
+}
+
+function addItem(kind){
+  const input = document.getElementById(`add-${kind}-input`);
+  const name = input.value.trim();
+  if(!name) return;
+  if(kind==='pillar'){ if(!pillars.some(p=>p.name===name)){ const c = PALETTE[pillars.length % PALETTE.length]; pillars.push({name, main:c.main, light:c.light}); } }
+  if(kind==='status'){ if(!statuses.some(s=>s.name===name)){ const c = PALETTE[statuses.length % PALETTE.length]; statuses.push({name, color:c.main}); } }
+  if(kind==='owner'){ if(!owners.includes(name)) owners.push(name); }
+  input.value = '';
+  persistAll(); renderManage();
+}
+
+function renameItem(kind, idx, newName){
+  newName = newName.trim(); if(!newName) { renderManage(); return; }
+  if(kind==='pillar'){ const old = pillars[idx].name; if(old===newName) return; data.forEach(a=>{ if(a.pillar===old) a.pillar=newName; }); pillars[idx].name = newName; }
+  if(kind==='status'){ const old = statuses[idx].name; if(old===newName) return; data.forEach(a=>{ if(a.status===old) a.status=newName; }); statuses[idx].name = newName; }
+  persistAll(); renderManage();
+}
+function renameOwner(idx, newName){
+  newName = newName.trim(); if(!newName) { renderManage(); return; }
+  const old = owners[idx]; if(old===newName) return;
+  data.forEach(a=>{ if(a.owner===old) a.owner=newName; });
+  owners[idx] = newName;
+  persistAll(); renderManage();
+}
+
+function removeItem(kind, idx){
+  if(kind==='pillar'){
+    const p = pillars[idx]; const n = data.filter(a=>a.pillar===p.name).length;
+    if(n>0){ alert(`"${p.name}" is used by ${n} activit${n===1?'y':'ies'}. Reassign or delete those first.`); return; }
+    if(pillars.length<=1){ alert('You need at least one focus area.'); return; }
+    pillars.splice(idx,1);
+  }
+  if(kind==='status'){
+    const s = statuses[idx]; const n = data.filter(a=>a.status===s.name).length;
+    if(n>0){ alert(`"${s.name}" is used by ${n} activit${n===1?'y':'ies'}. Reassign or delete those first.`); return; }
+    if(statuses.length<=1){ alert('You need at least one status.'); return; }
+    statuses.splice(idx,1);
+  }
+  if(kind==='owner'){
+    const o = owners[idx]; const n = data.filter(a=>a.owner===o).length;
+    if(n>0){ alert(`"${o}" is used by ${n} activit${n===1?'y':'ies'}. Reassign or delete those first.`); return; }
+    if(owners.length<=1){ alert('You need at least one owner.'); return; }
+    owners.splice(idx,1);
+  }
+  persistAll(); renderManage();
+}
+
+document.getElementById('modalOverlay').addEventListener('click', (e)=>{ if(e.target.id==='modalOverlay') closeModal(); });
+document.getElementById('manageOverlay').addEventListener('click', (e)=>{ if(e.target.id==='manageOverlay') closeManage(); });
+
+render();
+</script>
+</body>
+</html>
