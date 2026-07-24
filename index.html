@@ -98,7 +98,8 @@
   tr.row-flash td{animation: rowFlash 1.8s ease-out;}
   .empty-note{color:var(--gray-500); font-size:12.5px; padding:8px 0;}
   .pillars{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:14px; margin-bottom:18px;}
-  .pillar-card{background:#fff; border-radius:var(--radius); padding:16px; border-top:4px solid var(--blue); box-shadow:0 1px 2px rgba(0,0,0,0.04);}
+  .pillar-card{background:#fff; border-radius:var(--radius); padding:16px; border-top:4px solid var(--blue); box-shadow:0 1px 2px rgba(0,0,0,0.04); transition:box-shadow .15s;}
+  .pillar-card:hover{box-shadow:0 2px 8px rgba(0,0,0,0.1);}
   .pillar-top{display:flex; align-items:center; gap:12px;}
   .ring{width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .ring-inner{width:38px; height:38px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
@@ -556,10 +557,12 @@ function setFilter(f){
   renderStats();
   renderDonut();
   renderPipeline();
+  renderPillars();
   renderTable();
 }
-function clearFilter(){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderTable(); }
+function clearFilter(){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderPillars(); renderTable(); }
 function statusFilter(status){ return {key:'status-'+status, label:status, test:(a)=>a.status===status}; }
+function pillarFilter(name){ return {key:'pillar-'+name, label:name, test:(a)=>a.pillar===name}; }
 
 function scrollToActivity(id){
   if(activeFilter){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderTable(); }
@@ -705,7 +708,8 @@ function renderPillars(){
     const done = items.filter(a=>a.status==='Complete').length;
     const pct = items.length ? Math.round(done/items.length*100) : 0;
     const active = items.filter(a=>a.status!=='Complete').length;
-    return `<div class="pillar-card" style="border-top-color:${p.main}">
+    const isActive = activeFilter && activeFilter.key === 'pillar-'+p.name;
+    return `<div class="pillar-card" data-pillar="${escapeHtml(p.name)}" style="border-top-color:${p.main}; cursor:pointer; ${isActive ? `outline:2px solid ${p.main}; outline-offset:-1px; background:${p.light};` : ''}">
       <div class="pillar-top">
         <div class="ring" style="background:conic-gradient(${p.main} ${pct*3.6}deg, ${p.light} 0deg)"><div class="ring-inner" style="color:${p.main}">${pct}%</div></div>
         <div><div class="pillar-name">${escapeHtml(p.name)}</div><div class="pillar-count">${items.length} activities</div></div>
@@ -713,6 +717,9 @@ function renderPillars(){
       <div class="pillar-count" style="margin-top:10px;">${active} active · ${done} done</div>
     </div>`;
   }).join('');
+  document.querySelectorAll('#pillarCards .pillar-card').forEach(el=>{
+    el.addEventListener('click', ()=> setFilter(pillarFilter(el.dataset.pillar)));
+  });
 }
 
 function renderFilterPill(){
