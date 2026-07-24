@@ -1022,7 +1022,7 @@ async function scanGmailAndImport(){
     const parseResp = await fetch('/api/parse-emails', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ emails })
+      body: JSON.stringify({ emails, owner: isCarine ? 'Carine' : 'Allen' })
     });
     if(!parseResp.ok){
       const errBody = await parseResp.text();
