@@ -156,6 +156,7 @@
     <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Import CSV</button>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="importCSV(event)">
     <button class="btn" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn" id="gmailScanBtn" onclick="handleGmailImport()">✉ Scan Gmail (30 days)</button>
     <button class="btn primary" onclick="openModal()">+ New Activity</button>
   </div>
 </div>
@@ -283,6 +284,20 @@
   </div>
 </div>
 
+<!-- Gmail Import Review Modal -->
+<div class="modal-overlay" id="importReviewOverlay">
+  <div class="modal wide">
+    <h2>Review imported tasks</h2>
+    <div class="bc-sub" id="importReviewSub" style="margin-bottom:12px;"></div>
+    <div id="importReviewList" style="max-height:420px; overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeImportReview()">Cancel</button>
+      <button class="btn primary" onclick="addSelectedImportedTasks()">Add selected</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 <script>
 const ACT_KEY = 'familyFocusTracker_activities_v3';
@@ -504,6 +519,7 @@ function saveBudget(){
   renderBudgetCard();
 }
 document.getElementById('budgetOverlay').addEventListener('click', (e)=>{ if(e.target.id==='budgetOverlay') closeBudgetModal(); });
+document.getElementById('importReviewOverlay').addEventListener('click', (e)=>{ if(e.target.id==='importReviewOverlay') closeImportReview(); });
 
 function persistAll(){ saveList(ACT_KEY,data); saveList(PILLAR_KEY,pillars); saveList(STATUS_KEY,statuses); saveList(OWNER_KEY,owners); }
 
@@ -544,10 +560,197 @@ function renderSyncBar(){
     `Last synced — To Do: <b>${fmtSyncDate(syncStatus.todo)}</b> · Gmail (Allen): <b>${fmtSyncDate(syncStatus.gmailAllen)}</b> · Gmail (Carine): <b>${fmtSyncDate(syncStatus.gmailCarine)}</b>`;
 }
 function handleSyncNow(){
-  // Live push-button sync isn't wired up yet (needs Microsoft/Google account connections).
-  // For now this reuses the CSV import path, which is the current real sync mechanism.
-  alert('Live one-click sync (To Do + Gmail) isn\'t connected yet — that\'s next up. For now, "Sync now" opens CSV import so you can pull in a fresh export.');
+  // To Do sync isn't wired up yet (needs a Microsoft account connection). Gmail import has
+  // its own dedicated button/flow (handleGmailImport) since it needs a review step.
+  alert('Live one-click To Do sync isn\'t connected yet. For now, "Sync now" opens CSV import so you can pull in a fresh export. Use "✉ Scan Gmail" above to import from email.');
   document.getElementById('importFile').click();
+}
+
+// --- Gmail import ---
+const GMAIL_CLIENT_ID = '131005310666-67em0d1gpa9jtnv1ut3fphg749tf4d9q.apps.googleusercontent.com';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+let gmailTokenClient = null;
+let gmailAccessToken = null;
+let importCandidates = [];
+
+function setGmailBtnState(text, disabled){
+  const btn = document.getElementById('gmailScanBtn');
+  if(!btn) return;
+  btn.textContent = text;
+  btn.disabled = !!disabled;
+  btn.style.opacity = disabled ? '0.6' : '1';
+  btn.style.cursor = disabled ? 'default' : 'pointer';
+}
+
+function handleGmailImport(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2){
+    alert('Google sign-in is still loading — give it a second and click again.');
+    return;
+  }
+  if(!gmailTokenClient){
+    gmailTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GMAIL_CLIENT_ID,
+      scope: GMAIL_SCOPE,
+      callback: (resp)=>{
+        if(resp.error){
+          setGmailBtnState('✉ Scan Gmail (30 days)', false);
+          alert('Gmail connection was not completed: ' + resp.error);
+          return;
+        }
+        gmailAccessToken = resp.access_token;
+        scanGmailAndImport();
+      }
+    });
+  }
+  setGmailBtnState('Connecting…', true);
+  gmailTokenClient.requestAccessToken({ prompt: gmailAccessToken ? '' : 'consent' });
+}
+
+async function scanGmailAndImport(){
+  setGmailBtnState('Scanning inbox…', true);
+  try{
+    const listUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=40&q=' + encodeURIComponent('newer_than:30d -category:promotions -category:social');
+    const listResp = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + gmailAccessToken } });
+    if(!listResp.ok) throw new Error('Gmail list request failed (' + listResp.status + ')');
+    const listData = await listResp.json();
+    const ids = (listData.messages || []).map(m=>m.id);
+    if(ids.length === 0){
+      setGmailBtnState('✉ Scan Gmail (30 days)', false);
+      alert('No messages found in the last 30 days matching the scan criteria.');
+      return;
+    }
+
+    setGmailBtnState('Reading ' + ids.length + ' emails…', true);
+    const emails = [];
+    const chunkSize = 8;
+    for(let i=0; i<ids.length; i+=chunkSize){
+      const chunk = ids.slice(i, i+chunkSize);
+      const results = await Promise.all(chunk.map(async (id)=>{
+        const url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date';
+        const r = await fetch(url, { headers: { Authorization: 'Bearer ' + gmailAccessToken } });
+        if(!r.ok) return null;
+        const m = await r.json();
+        const headers = {}; (m.payload && m.payload.headers || []).forEach(h=> headers[h.name] = h.value);
+        return { id: m.id, threadId: m.threadId, subject: headers.Subject || '(no subject)', from: headers.From || '', date: headers.Date || '', snippet: m.snippet || '' };
+      }));
+      results.forEach(r=>{ if(r) emails.push(r); });
+    }
+
+    setGmailBtnState('Finding tasks…', true);
+    const parseResp = await fetch('/api/parse-emails', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ emails })
+    });
+    if(!parseResp.ok){
+      const errBody = await parseResp.text();
+      throw new Error('Task extraction failed (' + parseResp.status + '): ' + errBody);
+    }
+    const parsed = await parseResp.json();
+    const tasks = parsed.tasks || [];
+
+    syncStatus.gmailAllen = new Date().toISOString().slice(0,10);
+    saveList(SYNC_KEY, syncStatus);
+    renderSyncBar();
+
+    setGmailBtnState('✉ Scan Gmail (30 days)', false);
+    if(tasks.length === 0){
+      alert('Scanned ' + emails.length + ' emails from the last 30 days — nothing looked actionable enough to suggest as a task.');
+      return;
+    }
+    openImportReview(tasks);
+  }catch(err){
+    setGmailBtnState('✉ Scan Gmail (30 days)', false);
+    alert('Gmail scan failed: ' + (err && err.message ? err.message : err));
+  }
+}
+
+function openImportReview(tasks){
+  importCandidates = tasks.map(t=>({
+    emailId: t.emailId || '',
+    title: t.title || 'Untitled task',
+    focusArea: t.focusArea || pillars[0].name,
+    priority: t.priority || 'Medium',
+    notes: t.notes || '',
+    sourceSubject: t.sourceSubject || '',
+    sourceFrom: t.sourceFrom || '',
+    sourceThreadId: t.sourceThreadId || '',
+    selected: true
+  }));
+  renderImportReview();
+  document.getElementById('importReviewOverlay').classList.add('open');
+}
+
+function closeImportReview(){
+  document.getElementById('importReviewOverlay').classList.remove('open');
+}
+
+function renderImportReview(){
+  const list = document.getElementById('importReviewList');
+  document.getElementById('importReviewSub').textContent =
+    importCandidates.length + ' candidate task' + (importCandidates.length===1?'':'s') + ' found from the last 30 days. Uncheck any you don\'t want, edit as needed, then add.';
+  list.innerHTML = importCandidates.map((t,i)=>`
+    <div class="import-row" data-idx="${i}" style="border:1px solid var(--gray-200); border-radius:10px; padding:10px 12px; margin-bottom:10px; display:flex; gap:10px; align-items:flex-start; ${t.selected?'':'opacity:0.5;'}">
+      <input type="checkbox" class="import-check" ${t.selected?'checked':''} style="margin-top:5px; flex-shrink:0;">
+      <div style="flex:1; min-width:0;">
+        <input type="text" class="import-title" style="width:100%; font-weight:700; border:1px solid var(--gray-200); border-radius:6px; padding:5px 8px; font-size:13px; margin-bottom:6px; font-family:inherit; color:var(--gray-900);">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <select class="import-pillar" style="border:1px solid var(--gray-200); border-radius:6px; padding:4px 6px; font-size:12px;"></select>
+          <select class="import-priority" style="border:1px solid var(--gray-200); border-radius:6px; padding:4px 6px; font-size:12px;">
+            <option>High</option><option>Medium</option><option>Low</option>
+          </select>
+        </div>
+        <div style="color:var(--gray-500); font-size:11.5px; margin-top:6px;">${escapeHtml(t.sourceFrom)}${t.sourceSubject? ' · '+escapeHtml(t.sourceSubject):''}${t.sourceThreadId? ' · <a href="https://mail.google.com/mail/u/0/#all/'+encodeURIComponent(t.sourceThreadId)+'" target="_blank" style="color:var(--blue);">View email</a>':''}</div>
+      </div>
+    </div>`).join('');
+
+  list.querySelectorAll('.import-row').forEach((row)=>{
+    const i = Number(row.dataset.idx);
+    const t = importCandidates[i];
+
+    const titleEl = row.querySelector('.import-title');
+    titleEl.value = t.title;
+    titleEl.addEventListener('input', ()=> t.title = titleEl.value);
+
+    const pillarEl = row.querySelector('.import-pillar');
+    pillarEl.innerHTML = pillars.map(p=>`<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
+    if(pillars.some(p=>p.name===t.focusArea)) pillarEl.value = t.focusArea;
+    pillarEl.addEventListener('change', ()=> t.focusArea = pillarEl.value);
+
+    const priorityEl = row.querySelector('.import-priority');
+    priorityEl.value = t.priority;
+    priorityEl.addEventListener('change', ()=> t.priority = priorityEl.value);
+
+    const checkEl = row.querySelector('.import-check');
+    checkEl.addEventListener('change', ()=>{
+      t.selected = checkEl.checked;
+      row.style.opacity = t.selected ? '1' : '0.5';
+    });
+  });
+}
+
+function addSelectedImportedTasks(){
+  const selected = importCandidates.filter(t=>t.selected);
+  if(selected.length === 0){ closeImportReview(); return; }
+  const today = new Date().toISOString().slice(0,10);
+  const dueDefault = new Date(); dueDefault.setDate(dueDefault.getDate()+7);
+  selected.forEach(t=>{
+    const nextId = Math.max(0, ...data.map(a=>a.id)) + 1;
+    data.push({
+      id: nextId,
+      title: t.title,
+      pillar: pillars.some(p=>p.name===t.focusArea) ? t.focusArea : pillars[0].name,
+      owner: owners[0] || 'Allen',
+      priority: t.priority,
+      status: statuses[0] ? statuses[0].name : 'In Progress',
+      due: dueDefault.toISOString().slice(0,10),
+      notes: (t.notes ? t.notes + ' ' : '') + '(Imported from Gmail' + (t.sourceSubject? ': '+t.sourceSubject : '') + ')',
+      updated: today
+    });
+  });
+  saveList(ACT_KEY, data);
+  closeImportReview();
+  render();
 }
 
 // --- Stat-card filtering ---
