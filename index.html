@@ -86,6 +86,16 @@
   .badge.blocked{background:var(--pink); color:#fff;}
   .badge.onhold{background:var(--orange); color:#fff;}
   .attn-item .meta{color:var(--gray-500);}
+  .attn-item{cursor:pointer; transition:filter .1s, box-shadow .1s;}
+  .attn-item:hover{filter:brightness(0.96);}
+  .legend-row{cursor:pointer; border-radius:6px; padding:3px 4px; margin:-3px -4px; transition:background .15s;}
+  .legend-row:hover{background:var(--gray-50);}
+  .legend-row.active{background:var(--blue-light);}
+  .pipeline-row{cursor:pointer; border-radius:8px; padding:4px 6px; margin:-4px -6px 8px;}
+  .pipeline-row:hover{background:var(--gray-50);}
+  .pipeline-row.active{background:var(--blue-light);}
+  @keyframes rowFlash{0%{background:#fef3c7;}100%{background:transparent;}}
+  tr.row-flash td{animation: rowFlash 1.8s ease-out;}
   .empty-note{color:var(--gray-500); font-size:12.5px; padding:8px 0;}
   .pillars{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:14px; margin-bottom:18px;}
   .pillar-card{background:#fff; border-radius:var(--radius); padding:16px; border-top:4px solid var(--blue); box-shadow:0 1px 2px rgba(0,0,0,0.04);}
@@ -544,9 +554,23 @@ let activeFilter = null; // {key, label, test(activity)->bool}
 function setFilter(f){
   activeFilter = (activeFilter && activeFilter.key === f.key) ? null : f;
   renderStats();
+  renderDonut();
+  renderPipeline();
   renderTable();
 }
-function clearFilter(){ activeFilter = null; renderStats(); renderTable(); }
+function clearFilter(){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderTable(); }
+function statusFilter(status){ return {key:'status-'+status, label:status, test:(a)=>a.status===status}; }
+
+function scrollToActivity(id){
+  if(activeFilter){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderTable(); }
+  requestAnimationFrame(()=>{
+    const el = document.getElementById('row-'+id);
+    if(!el) return;
+    el.scrollIntoView({behavior:'smooth', block:'center'});
+    el.classList.add('row-flash');
+    setTimeout(()=> el.classList.remove('row-flash'), 1800);
+  });
+}
 
 function render(){
   applyAutoStall();
@@ -632,20 +656,32 @@ function renderDonut(){
   const ctx = document.getElementById('statusDonut').getContext('2d');
   if(donutChart) donutChart.destroy();
   donutChart = new Chart(ctx, { type:'doughnut', data:{labels, datasets:[{data:values, backgroundColor:colors, borderWidth:2, borderColor:'#fff'}]},
-    options:{responsive:true, maintainAspectRatio:false, cutout:'68%', plugins:{legend:{display:false}, tooltip:{enabled:true}}} });
-  document.getElementById('donutLegend').innerHTML = labels.map((l,i)=>`
-    <div class="legend-row"><span class="name"><span class="dot" style="background:${colors[i]}"></span>${escapeHtml(l)}</span><span class="val">${values[i]}</span></div>`).join('');
+    options:{responsive:true, maintainAspectRatio:false, cutout:'68%', onHover:(evt,els)=>{ evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+      onClick:(evt, elements)=>{ if(elements.length){ setFilter(statusFilter(labels[elements[0].index])); } },
+      plugins:{legend:{display:false}, tooltip:{enabled:true}}} });
+  document.getElementById('donutLegend').innerHTML = labels.map((l,i)=>{
+    const isActive = activeFilter && activeFilter.key === 'status-'+l;
+    return `<div class="legend-row${isActive?' active':''}" data-status="${escapeHtml(l)}"><span class="name"><span class="dot" style="background:${colors[i]}"></span>${escapeHtml(l)}</span><span class="val">${values[i]}</span></div>`;
+  }).join('');
+  document.querySelectorAll('#donutLegend .legend-row').forEach(el=>{
+    el.addEventListener('click', ()=> setFilter(statusFilter(el.dataset.status)));
+  });
 }
 
 function renderPipeline(){
   const counts = {}; statuses.forEach(s=>counts[s.name]=0);
   data.forEach(a=>{ if(counts[a.status]===undefined) counts[a.status]=0; counts[a.status]++; });
   const max = Math.max(1, ...Object.values(counts));
-  document.getElementById('pipelineList').innerHTML = Object.entries(counts).map(([status,count])=>`
-    <div class="pipeline-row">
+  document.getElementById('pipelineList').innerHTML = Object.entries(counts).map(([status,count])=>{
+    const isActive = activeFilter && activeFilter.key === 'status-'+status;
+    return `<div class="pipeline-row${isActive?' active':''}" data-status="${escapeHtml(status)}">
       <div class="top"><span class="name">${escapeHtml(status)}</span><span class="val">${count}</span></div>
       <div class="bar-bg"><div class="bar-fill" style="width:${(count/max*100)}%; background:${statusByName(status).color}"></div></div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#pipelineList .pipeline-row').forEach(el=>{
+    el.addEventListener('click', ()=> setFilter(statusFilter(el.dataset.status)));
+  });
 }
 
 function renderAttention(){
@@ -656,8 +692,11 @@ function renderAttention(){
     const cls = a.status==='Blocked' ? 'blocked' : (a.status==='Stalled' ? 'onhold' : 'overdue');
     const badgeCls = a.status==='Stalled' ? 'onhold' : 'blocked';
     const badgeText = overdue && a.status!=='Blocked' && a.status!=='Stalled' ? 'Overdue' : a.status;
-    return `<div class="attn-item ${cls}"><div class="top"><span class="title">${escapeHtml(a.title)}</span><span class="badge ${badgeCls}">${escapeHtml(badgeText)}</span></div><div class="meta">${escapeHtml(a.pillar)} · ${escapeHtml(a.owner)} · due ${fmtDate(a.due)}</div></div>`;
+    return `<div class="attn-item ${cls}" data-id="${a.id}" title="Jump to this activity in the table below"><div class="top"><span class="title">${escapeHtml(a.title)}</span><span class="badge ${badgeCls}">${escapeHtml(badgeText)}</span></div><div class="meta">${escapeHtml(a.pillar)} · ${escapeHtml(a.owner)} · due ${fmtDate(a.due)}</div></div>`;
   }).join('');
+  document.querySelectorAll('#attentionList .attn-item').forEach(el=>{
+    el.addEventListener('click', ()=> scrollToActivity(Number(el.dataset.id)));
+  });
 }
 
 function renderPillars(){
@@ -695,7 +734,7 @@ function renderTable(){
     const pc = PRIORITY_COLORS[a.priority] || PRIORITY_COLORS['Medium'];
     const sc = statusByName(a.status).color;
     const overdue = daysUntil(a.due) < 0 && a.status!=='Complete';
-    return `<tr>
+    return `<tr id="row-${a.id}">
       <td><b>${escapeHtml(a.title)}</b>${a.notes ? `<div style="color:#9ca3af;font-size:11.5px;margin-top:2px;">${escapeHtml(a.notes)}</div>`:''}</td>
       <td>${escapeHtml(a.pillar)}</td>
       <td class="owner-tag">${escapeHtml(a.owner)}</td>
