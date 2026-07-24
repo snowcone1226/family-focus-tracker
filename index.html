@@ -393,6 +393,20 @@ async function pullRemoteState(silent){
   isPulling = false;
 }
 
+// Safety net: debounced saves (schedulePush, 800ms) can be lost if the tab or
+// browser is closed before the timer fires -- the page would then reopen
+// showing stale data pulled back down from the shared backend. Flush the
+// current state on pagehide via sendBeacon, which browsers guarantee to
+// deliver even as the page is unloading.
+window.addEventListener('pagehide', () => {
+  try{
+    clearTimeout(pushTimer);
+    const payload = { activities: data, pillars, statuses, owners, budget, syncStatus };
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    navigator.sendBeacon(STATE_API, blob);
+  }catch(e){ /* best effort */ }
+});
+
 
 const DEFAULT_PILLARS = [
   {name:'Home & Household', main:'#12a894', light:'#e4f7f4'},
@@ -599,17 +613,21 @@ async function refreshPocketSmithBudget(){
       const errBody = await resp.json().catch(()=>({}));
       throw new Error(errBody.error || ('PocketSmith refresh failed (' + resp.status + ')'));
     }
-    const data = await resp.json();
+    const psData = await resp.json();
     // Rollover is a manually-tracked credit (not something PocketSmith's budget
     // summary reports), so we leave budget.rollover untouched here.
     budget = {
       ...budget,
-      asOf: data.asOf || budget.asOf,
-      income: data.income || budget.income,
-      expense: data.expense || budget.expense
+      asOf: psData.asOf || budget.asOf,
+      income: psData.income || budget.income,
+      expense: psData.expense || budget.expense
     };
     saveList(BUDGET_KEY, budget);
     renderBudgetCard();
+    // Push immediately rather than waiting on the normal 800ms debounce, so
+    // the shared backend reflects the new numbers right away -- otherwise a
+    // quick tab close could lose the refresh and show stale data next time.
+    await pushRemoteState();
   }catch(err){
     alert('PocketSmith refresh failed: ' + (err && err.message ? err.message : err));
   }finally{
@@ -849,6 +867,9 @@ async function syncMicrosoftTodo(){
     saveList(ACT_KEY, data);
     render();
     renderSyncBar();
+    // Push immediately instead of waiting on the debounce, so a quick tab
+    // close right after syncing can't lose the update.
+    await pushRemoteState();
   } finally {
     syncInProgress = false;
   }
@@ -1014,6 +1035,7 @@ async function scanGmailAndImport(){
     else syncStatus.gmailAllen = new Date().toISOString().slice(0,10);
     saveList(SYNC_KEY, syncStatus);
     renderSyncBar();
+    await pushRemoteState();
 
     setGmailBtnState(btnId, idleLabel, false);
     if(tasks.length === 0){
