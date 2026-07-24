@@ -967,21 +967,25 @@ function handleGmailImportCarine(){
   gmailTokenClientCarine.requestAccessToken({ prompt: gmailAccessTokenCarine ? '' : 'consent' });
 }
 
-async function scanGmailAndImport(){
+async function scanGmailAndImport(){  const isCarine = activeGmailOwner === 'Carine';  const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;  const btnId = isCarine ? 'syncCarineBtn' : 'gmailScanBtn';  const scanParams = new URLSearchParams(location.search);  const lookbackDays = parseInt(scanParams.get('days'), 10) || 30;  const isCarine = activeGmailOwner === 'Carine';  const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;  const btnId = isCarine ? 'syncCarineBtn' : 'gmailScanBtn';  const isCarine = activeGmailOwner === 'Carine';
+                                    const scanParams = new URLSearchParams(location.search);
+                                    const lookbackDays = parseInt(scanParams.get('days'), 10) || 30;
+                                    const maxResults = parseInt(scanParams.get('max'), 10) || 40;
+  window.lastScanLookbackDays = lookbackDays;
   const isCarine = activeGmailOwner === 'Carine';
   const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;
   const btnId = isCarine ? 'syncCarineBtn' : 'gmailScanBtn';
   const idleLabel = isCarine ? "✉ Sync Carine's Gmail" : '✉ Scan My Gmail (30 days)';
   setGmailBtnState(btnId, 'Scanning inbox…', true);
   try{
-    const listUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=40&q=' + encodeURIComponent('newer_than:30d -category:promotions -category:social');
+    const listUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=' + maxResults + '&q=' + encodeURIComponent('newer_than:' + lookbackDays + 'd -category:promotions -category:social');
     const listResp = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + token } });
     if(!listResp.ok) throw new Error('Gmail list request failed (' + listResp.status + ')');
     const listData = await listResp.json();
     const ids = (listData.messages || []).map(m=>m.id);
     if(ids.length === 0){
       setGmailBtnState(btnId, idleLabel, false);
-      alert('No messages found in the last 30 days matching the scan criteria.');
+      alert('No messages found in the last ' + lookbackDays + ' days matching the scan criteria.');
       return;
     }
 
@@ -1014,7 +1018,7 @@ async function scanGmailAndImport(){
 
     if(emails.length === 0){
       setGmailBtnState(btnId, idleLabel, false);
-      alert('No messages found in the last 30 days after filtering out excluded senders.');
+      alert('No messages found in the last ' + lookbackDays + ' days after filtering out excluded senders.');
       return;
     }
 
@@ -1039,7 +1043,7 @@ async function scanGmailAndImport(){
 
     setGmailBtnState(btnId, idleLabel, false);
     if(tasks.length === 0){
-      alert('Scanned ' + emails.length + ' emails from the last 30 days — nothing looked actionable enough to suggest as a task.');
+      alert('Scanned ' + emails.length + ' emails from the last ' + lookbackDays + ' days — nothing looked actionable enough to suggest as a task.');
       return;
     }
     openImportReview(tasks);
@@ -1074,7 +1078,7 @@ function closeImportReview(){
 function renderImportReview(){
   const list = document.getElementById('importReviewList');
   document.getElementById('importReviewSub').textContent =
-    importCandidates.length + ' candidate task' + (importCandidates.length===1?'':'s') + ' found from the last 30 days. Uncheck any you don\'t want, edit as needed, then add.';
+    importCandidates.length + ' candidate task' + (importCandidates.length===1?'':'s') + ' found from the last ' + (window.lastScanLookbackDays || 30) + ' days. Uncheck any you don\'t want, edit as needed, then add.';
   list.innerHTML = importCandidates.map((t,i)=>`
     <div class="import-row" data-idx="${i}" style="border:1px solid var(--gray-200); border-radius:10px; padding:10px 12px; margin-bottom:10px; display:flex; gap:10px; align-items:flex-start; ${t.selected?'':'opacity:0.5;'}">
       <input type="checkbox" class="import-check" ${t.selected?'checked':''} style="margin-top:5px; flex-shrink:0;">
