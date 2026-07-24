@@ -52,23 +52,18 @@ module.exports = async (req, res) => {
       res.status(budgetResp.status).json({ error: 'PocketSmith budget summary request failed', detail: t });
       return;
     }
-    const packages = await budgetResp.json();
+    const summary = await budgetResp.json();
 
-    let incomeBudget = 0, incomeActual = 0, expenseBudget = 0, expenseActual = 0;
-    (Array.isArray(packages) ? packages : []).forEach((pkg) => {
-      if (!pkg || pkg.is_transfer) return; // exclude categories that look like transfers between accounts
-      if (pkg.income) {
-        incomeBudget += Number(pkg.income.total_forecast_amount) || 0;
-        incomeActual += Number(pkg.income.total_actual_amount) || 0;
-      }
-      if (pkg.expense) {
-        // PocketSmith reports expense amounts as negative (money out); we store
-        // this dashboard's budget as positive magnitudes, matching the existing
-        // manual-entry convention used by openBudgetModal/saveBudget.
-        expenseBudget += Math.abs(Number(pkg.expense.total_forecast_amount) || 0);
-        expenseActual += Math.abs(Number(pkg.expense.total_actual_amount) || 0);
-      }
-    });
+    // When called without a `categories` filter, PocketSmith's budget_summary
+    // endpoint returns one pre-aggregated object (income/expense totals across
+    // all non-transfer categories) rather than an array per category.
+    const incomeBudget = Number(summary && summary.income && summary.income.total_forecast_amount) || 0;
+    const incomeActual = Number(summary && summary.income && summary.income.total_actual_amount) || 0;
+    // PocketSmith reports expense amounts as negative (money out); we store
+    // this dashboard's budget as positive magnitudes, matching the existing
+    // manual-entry convention used by openBudgetModal/saveBudget.
+    const expenseBudget = Math.abs(Number(summary && summary.expense && summary.expense.total_forecast_amount) || 0);
+    const expenseActual = Math.abs(Number(summary && summary.expense && summary.expense.total_actual_amount) || 0);
 
     const round2 = (n) => Math.round(n * 100) / 100;
     const monthName = now.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
