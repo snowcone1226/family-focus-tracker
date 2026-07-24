@@ -156,14 +156,17 @@
     <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Import CSV</button>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="importCSV(event)">
     <button class="btn" onclick="exportCSV()">⬇ Export CSV</button>
-    <button class="btn" id="gmailScanBtn" onclick="handleGmailImport()">✉ Scan Gmail (30 days)</button>
+    <button class="btn" id="gmailScanBtn" onclick="handleGmailImport()">✉ Scan My Gmail (30 days)</button>
     <button class="btn primary" onclick="openModal()">+ New Activity</button>
   </div>
 </div>
 
 <div class="banner" id="syncBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
   <div id="syncStatusText" style="font-size:12px;">Loading sync status…</div>
-  <button class="btn" id="syncNowBtn" style="flex-shrink:0;" onclick="handleSyncNow()">⟳ Sync now</button>
+  <div style="display:flex; gap:8px; flex-shrink:0;">
+    <button class="btn" id="syncCarineBtn" style="flex-shrink:0;" onclick="handleGmailImportCarine()">✉ Sync Carine's Gmail</button>
+    <button class="btn" id="syncNowBtn" style="flex-shrink:0;" onclick="handleSyncNow()">⟳ Sync now</button>
+  </div>
 </div>
 
 <div class="stats" id="statsRow"></div>
@@ -837,14 +840,19 @@ async function handleSyncNow(){
 }
 
 // --- Gmail import ---
+// Two independent OAuth sessions -- one per family member's inbox -- so each
+// person's Gmail token/scan is tracked (and can be re-authed) separately.
 const GMAIL_CLIENT_ID = '131005310666-67em0d1gpa9jtnv1ut3fphg749tf4d9q.apps.googleusercontent.com';
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 let gmailTokenClient = null;
 let gmailAccessToken = null;
+let gmailTokenClientCarine = null;
+let gmailAccessTokenCarine = null;
+let activeGmailOwner = 'Allen'; // which person the in-progress scan belongs to
 let importCandidates = [];
 
-function setGmailBtnState(text, disabled){
-  const btn = document.getElementById('gmailScanBtn');
+function setGmailBtnState(btnId, text, disabled){
+  const btn = document.getElementById(btnId);
   if(!btn) return;
   btn.textContent = text;
   btn.disabled = !!disabled;
@@ -857,13 +865,14 @@ function handleGmailImport(){
     alert('Google sign-in is still loading — give it a second and click again.');
     return;
   }
+  activeGmailOwner = 'Allen';
   if(!gmailTokenClient){
     gmailTokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GMAIL_CLIENT_ID,
       scope: GMAIL_SCOPE,
       callback: (resp)=>{
         if(resp.error){
-          setGmailBtnState('✉ Scan Gmail (30 days)', false);
+          setGmailBtnState('gmailScanBtn', '✉ Scan My Gmail (30 days)', false);
           alert('Gmail connection was not completed: ' + resp.error);
           return;
         }
@@ -872,32 +881,64 @@ function handleGmailImport(){
       }
     });
   }
-  setGmailBtnState('Connecting…', true);
+  setGmailBtnState('gmailScanBtn', 'Connecting…', true);
   gmailTokenClient.requestAccessToken({ prompt: gmailAccessToken ? '' : 'consent' });
 }
 
+function handleGmailImportCarine(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2){
+    alert('Google sign-in is still loading — give it a second and click again.');
+    return;
+  }
+  activeGmailOwner = 'Carine';
+  if(!gmailTokenClientCarine){
+    gmailTokenClientCarine = google.accounts.oauth2.initTokenClient({
+      client_id: GMAIL_CLIENT_ID,
+      scope: GMAIL_SCOPE,
+      callback: (resp)=>{
+        if(resp.error){
+          setGmailBtnState('syncCarineBtn', "✉ Sync Carine's Gmail", false);
+          alert("Carine's Gmail connection was not completed: " + resp.error);
+          return;
+        }
+        gmailAccessTokenCarine = resp.access_token;
+        scanGmailAndImport();
+      }
+    });
+  }
+  setGmailBtnState('syncCarineBtn', 'Connecting…', true);
+  // Always show the account chooser for Carine's button so it's unambiguous
+  // which Google account is being granted -- this button should only ever be
+  // used with carinepyree@gmail.com.
+  gmailTokenClientCarine.requestAccessToken({ prompt: gmailAccessTokenCarine ? '' : 'consent' });
+}
+
 async function scanGmailAndImport(){
-  setGmailBtnState('Scanning inbox…', true);
+  const isCarine = activeGmailOwner === 'Carine';
+  const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;
+  const btnId = isCarine ? 'syncCarineBtn' : 'gmailScanBtn';
+  const idleLabel = isCarine ? "✉ Sync Carine's Gmail" : '✉ Scan My Gmail (30 days)';
+  setGmailBtnState(btnId, 'Scanning inbox…', true);
   try{
     const listUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=40&q=' + encodeURIComponent('newer_than:30d -category:promotions -category:social');
-    const listResp = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + gmailAccessToken } });
+    const listResp = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + token } });
     if(!listResp.ok) throw new Error('Gmail list request failed (' + listResp.status + ')');
     const listData = await listResp.json();
     const ids = (listData.messages || []).map(m=>m.id);
     if(ids.length === 0){
-      setGmailBtnState('✉ Scan Gmail (30 days)', false);
+      setGmailBtnState(btnId, idleLabel, false);
       alert('No messages found in the last 30 days matching the scan criteria.');
       return;
     }
 
-    setGmailBtnState('Reading ' + ids.length + ' emails…', true);
+    setGmailBtnState(btnId, 'Reading ' + ids.length + ' emails…', true);
     const emails = [];
     const chunkSize = 8;
     for(let i=0; i<ids.length; i+=chunkSize){
       const chunk = ids.slice(i, i+chunkSize);
       const results = await Promise.all(chunk.map(async (id)=>{
         const url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + id + '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date';
-        const r = await fetch(url, { headers: { Authorization: 'Bearer ' + gmailAccessToken } });
+        const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
         if(!r.ok) return null;
         const m = await r.json();
         const headers = {}; (m.payload && m.payload.headers || []).forEach(h=> headers[h.name] = h.value);
@@ -906,7 +947,7 @@ async function scanGmailAndImport(){
       results.forEach(r=>{ if(r) emails.push(r); });
     }
 
-    setGmailBtnState('Finding tasks…', true);
+    setGmailBtnState(btnId, 'Finding tasks…', true);
     const parseResp = await fetch('/api/parse-emails', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -919,23 +960,25 @@ async function scanGmailAndImport(){
     const parsed = await parseResp.json();
     const tasks = parsed.tasks || [];
 
-    syncStatus.gmailAllen = new Date().toISOString().slice(0,10);
+    if(isCarine) syncStatus.gmailCarine = new Date().toISOString().slice(0,10);
+    else syncStatus.gmailAllen = new Date().toISOString().slice(0,10);
     saveList(SYNC_KEY, syncStatus);
     renderSyncBar();
 
-    setGmailBtnState('✉ Scan Gmail (30 days)', false);
+    setGmailBtnState(btnId, idleLabel, false);
     if(tasks.length === 0){
       alert('Scanned ' + emails.length + ' emails from the last 30 days — nothing looked actionable enough to suggest as a task.');
       return;
     }
     openImportReview(tasks);
   }catch(err){
-    setGmailBtnState('✉ Scan Gmail (30 days)', false);
+    setGmailBtnState(btnId, idleLabel, false);
     alert('Gmail scan failed: ' + (err && err.message ? err.message : err));
   }
 }
 
 function openImportReview(tasks){
+  const owner = activeGmailOwner === 'Carine' ? 'Carine' : (owners[0] || 'Allen');
   importCandidates = tasks.map(t=>({
     emailId: t.emailId || '',
     title: t.title || 'Untitled task',
@@ -945,6 +988,7 @@ function openImportReview(tasks){
     sourceSubject: t.sourceSubject || '',
     sourceFrom: t.sourceFrom || '',
     sourceThreadId: t.sourceThreadId || '',
+    owner: owner,
     selected: true
   }));
   renderImportReview();
@@ -1010,7 +1054,7 @@ function addSelectedImportedTasks(){
       id: nextId,
       title: t.title,
       pillar: pillars.some(p=>p.name===t.focusArea) ? t.focusArea : pillars[0].name,
-      owner: owners[0] || 'Allen',
+      owner: t.owner || owners[0] || 'Allen',
       priority: t.priority,
       status: statuses[0] ? statuses[0].name : 'In Progress',
       due: dueDefault.toISOString().slice(0,10),
