@@ -1053,9 +1053,30 @@ async function scanGmailAndImport(){
   }
 }
 
+function normalizeTitleWords(title){
+  return new Set((title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(' ').filter(w=>w.length>2));
+}
+function isLikelyDuplicateTask(candidateTitle, existingTitle){
+  const a = normalizeTitleWords(candidateTitle), b = normalizeTitleWords(existingTitle);
+  if(a.size===0 || b.size===0) return false;
+  let common=0;
+  a.forEach(w=>{ if(b.has(w)) common++; });
+  return (common / Math.min(a.size, b.size)) >= 0.5;
+}
+
 function openImportReview(tasks){
   const owner = activeGmailOwner === 'Carine' ? 'Carine' : (owners[0] || 'Allen');
-  importCandidates = tasks.map(t=>({
+  const existingThreadIds = new Set(data.map(a=>a.sourceThreadId).filter(Boolean));
+  const existingTitles = data.map(a=>a.title);
+  const deduped = tasks.filter(t=>{
+    if(t.sourceThreadId && existingThreadIds.has(t.sourceThreadId)) return false;
+    return !existingTitles.some(et=> isLikelyDuplicateTask(t.title, et));
+  });
+  if(deduped.length === 0){
+    alert('Scanned emails, but every candidate task matched something already in the tracker — nothing new to review.');
+    return;
+  }
+  importCandidates = deduped.map(t=>({
     emailId: t.emailId || '',
     title: t.title || 'Untitled task',
     focusArea: t.focusArea || pillars[0].name,
@@ -1069,7 +1090,7 @@ function openImportReview(tasks){
   }));
   renderImportReview();
   document.getElementById('importReviewOverlay').classList.add('open');
-}
+}}
 
 function closeImportReview(){
   document.getElementById('importReviewOverlay').classList.remove('open');
@@ -1135,7 +1156,8 @@ function addSelectedImportedTasks(){
       status: statuses[0] ? statuses[0].name : 'In Progress',
       due: dueDefault.toISOString().slice(0,10),
       notes: (t.notes ? t.notes + ' ' : '') + '(Imported from Gmail' + (t.sourceSubject? ': '+t.sourceSubject : '') + ')',
-      updated: today
+      sourceThreadId: t.sourceThreadId || '',
+            updated: today
     });
   });
   saveList(ACT_KEY, data);
