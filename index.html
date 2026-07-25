@@ -360,6 +360,7 @@ const LAST_SERVER_STAMP_KEY = 'familyFocusTracker_lastServerUpdatedAt';
 let pushTimer = null;
 let isPushing = false;
 let isPulling = false;
+let stateVersion = 0;
 
 function schedulePush(){
   clearTimeout(pushTimer);
@@ -370,7 +371,7 @@ async function pushRemoteState(){
   if(isPushing) return;
   isPushing = true;
   try{
-    const payload = { activities: data, pillars, statuses, owners, budget, netWorth, syncStatus };
+    const payload = { activities: data, pillars, statuses, owners, budget, syncStatus, expectedVersion: stateVersion };
     const res = await fetch(STATE_API, {
       method: 'PUT',
       headers: {'content-type':'application/json'},
@@ -379,6 +380,23 @@ async function pushRemoteState(){
     if(res.ok){
       const j = await res.json();
       if(j && j.updatedAt) localStorage.setItem(LAST_SERVER_STAMP_KEY, j.updatedAt);
+      if(j && typeof j.version === 'number') stateVersion = j.version;
+    } else if(res.status === 409){
+      const j = await res.json().catch(()=>null);
+      const current = j && j.current;
+      if(current){
+        data = normalizeData(current.activities || data);
+        pillars = current.pillars || pillars;
+        statuses = current.statuses || statuses;
+        owners = current.owners || owners;
+        budget = current.budget || budget;
+        syncStatus = current.syncStatus || syncStatus;
+        stateVersion = current.version || stateVersion;
+        saveList(ACT_KEY, data); saveList(PILLAR_KEY, pillars); saveList(STATUS_KEY, statuses);
+        saveList(OWNER_KEY, owners); saveList(BUDGET_KEY, budget); saveList(SYNC_KEY, syncStatus);
+        render(); renderBudgetCard(); renderSyncBar();
+        console.warn('Sync: shared list changed elsewhere first (version conflict) — reloaded the latest version. If your last edit is missing, please redo it.');
+      }
     }
   }catch(e){ console.warn('Sync: push to shared backend failed', e); }
   isPushing = false;
@@ -391,7 +409,8 @@ async function pullRemoteState(silent){
     const res = await fetch(STATE_API);
     if(!res.ok){ isPulling = false; return; }
     const remote = await res.json();
-    if(!remote || !remote.exists){
+
+    stateVersion = remote.version || 0;    if(!remote || !remote.exists){
       // Nothing saved on the shared backend yet (first-ever deploy) — seed it
       // from whatever this browser already has (Allen's existing 88 activities).
       await pushRemoteState();
@@ -405,10 +424,9 @@ async function pullRemoteState(silent){
       statuses = remote.statuses || statuses;
       owners = remote.owners || owners;
       budget = remote.budget || budget;
-netWorth = remote.netWorth || netWorth;
-      syncStatus = remote.syncStatus || syncStatus;
+syncStatus = remote.syncStatus || syncStatus;
       saveList(ACT_KEY, data); saveList(PILLAR_KEY, pillars); saveList(STATUS_KEY, statuses);
-      saveList(OWNER_KEY, owners); saveList(BUDGET_KEY, budget); saveList(NETWORTH_KEY, netWorth); saveList(SYNC_KEY, syncStatus);
+      saveList(OWNER_KEY, owners); saveList(BUDGET_KEY, budget); saveList(SYNC_KEY, syncStatus);
       localStorage.setItem(LAST_SERVER_STAMP_KEY, remote.updatedAt);
       render(); renderBudgetCard(); renderNetWorthBadge(); renderSyncBar();
     }
@@ -424,7 +442,7 @@ netWorth = remote.netWorth || netWorth;
 window.addEventListener('pagehide', () => {
   try{
     clearTimeout(pushTimer);
-    const payload = { activities: data, pillars, statuses, owners, budget, netWorth, syncStatus };
+    const payload = { activities: data, pillars, statuses, owners, budget, syncStatus, expectedVersion: stateVersion };
     const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
     navigator.sendBeacon(STATE_API, blob);
   }catch(e){ /* best effort */ }
@@ -605,7 +623,6 @@ fetchedAt: nw.fetchedAt
 };
 saveList(NETWORTH_KEY, netWorth);
 renderNetWorthBadge();
-await pushRemoteState();
 }catch(err){ console.warn('Net worth refresh failed', err); }
 }
 
