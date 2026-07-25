@@ -41,6 +41,7 @@
 .nw-badge-row{display:flex; align-items:baseline; gap:8px;}
 .nw-badge-value{font-size:18px; font-weight:800; color:var(--gray-900);}
 .nw-badge-change{font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:20px; white-space:nowrap;}
+.nw-badge-date{font-size:10px; color:var(--gray-500); margin-top:1px;}
   .banner{background:var(--blue-light); border:1px solid #cddcfa; color:#1e4a99; font-size:12.5px; padding:10px 14px; border-radius:10px; margin-bottom:18px; line-height:1.5;}
   .banner b{color:#123a80;}
   .stats{display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;}
@@ -161,6 +162,7 @@
 <span class="nw-badge-value" id="nwBadgeValue">—</span>
 <span class="nw-badge-change" id="nwBadgeChange"></span>
 </div>
+<div class="nw-badge-date" id="nwBadgeDate"></div>
 </a>
   </div>
   <div class="header-actions">
@@ -579,6 +581,7 @@ chEl.textContent = arrow + ' ' + (good?'+':'-') + fmt(netWorth.changeAmount) + p
 chEl.style.background = good ? '#e4f7f4' : '#fdeaef';
 chEl.style.color = good ? '#12a894' : '#e0245e';
 }
+const dateEl = document.getElementById('nwBadgeDate'); if(dateEl) dateEl.textContent = netWorth.fetchedAt ? ('Refreshed ' + new Date(netWorth.fetchedAt).toLocaleDateString(undefined,{month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'})) : '';
 el.title = netWorth.fetchedAt ? ('As of ' + (netWorth.asOfMonth||'') + ' · updated ' + new Date(netWorth.fetchedAt).toLocaleString()) : '';
 }
 
