@@ -1,6 +1,14 @@
 // Shared state store for Family Focus Tracker, backed by Upstash Redis (REST API).
-// GET  -> returns the current shared state ({ exists:false } if nothing saved yet)
-// PUT/POST -> saves the full state blob (activities, pillars, statuses, owners, budget, syncStatus)
+// Uses a simple optimistic-concurrency (compare-and-swap) version counter so concurrent editors
+// (multiple browser tabs/users, or automated sync scripts) can never silently clobber each other's
+// changes: every save must say which version it was based on, and is rejected (409) if the shared
+// state has moved on since then, forcing that client to re-pull the latest data before retrying.
+// GET       -> returns the current shared state ({ exists:false } if nothing saved yet), including `version`.
+// PUT/POST  -> saves the full state blob (activities, pillars, statuses, owners, budget, syncStatus).
+//              Body should include `expectedVersion` (the version this client last pulled).
+//              On success returns { ok:true, version, updatedAt }.
+//              On conflict (expectedVersion doesn't match current stored version) returns 409 with
+//              the current server state under `current`, so the caller can merge/re-apply and retry.
 
 const REDIS_URL = process.env.REDIS_KV_REST_API_URL;
 const REDIS_TOKEN = process.env.REDIS_KV_REST_API_TOKEN;
@@ -9,10 +17,7 @@ const STATE_KEY = 'family-focus-tracker:state';
 async function redisCommand(command) {
   const r = await fetch(REDIS_URL, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${REDIS_TOKEN}`,
-      'content-type': 'application/json'
-    },
+    headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'content-type': 'application/json' },
     body: JSON.stringify(command)
   });
   if (!r.ok) {
@@ -28,40 +33,63 @@ module.exports = async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET') {
-    try {
-      const result = await redisCommand(['GET', STATE_KEY]);
-      if (!result || result.result == null) {
-        res.status(200).json({ exists: false });
+  try {
+    if (req.method === 'GET') {
+      const stored = await redisCommand(['GET', STATE_KEY]);
+      if (!stored || !stored.result) {
+        res.status(200).json({ exists: false, version: 0 });
         return;
       }
       let parsed;
-      try {
-        parsed = JSON.parse(result.result);
-      } catch (e) {
-        res.status(500).json({ error: 'Stored state is corrupted', detail: String(e) });
+      try { parsed = JSON.parse(stored.result); } catch (e) {
+        res.status(500).json({ error: 'Stored state is corrupt', detail: String(e) });
         return;
       }
-      res.status(200).json({ exists: true, ...parsed });
-    } catch (err) {
-      res.status(500).json({ error: 'Failed to read state', detail: String(err && err.message ? err.message : err) });
+      res.status(200).json({ exists: true, version: parsed.version || 0, ...parsed });
+      return;
     }
-    return;
-  }
 
-  if (req.method === 'PUT' || req.method === 'POST') {
-    try {
-      const body = req.body || {};
+    if (req.method === 'PUT' || req.method === 'POST') {
+      const body = req.body && typeof req.body === 'object' ? req.body : JSON.parse(req.body || '{}');
+
+      // Read current stored state to check version before overwriting.
+      const stored = await redisCommand(['GET', STATE_KEY]);
+      let currentParsed = null;
+      let currentVersion = 0;
+      if (stored && stored.result) {
+        try { currentParsed = JSON.parse(stored.result); currentVersion = currentParsed.version || 0; } catch (e) { /* ignore corrupt existing state */ }
+      }
+
+      const expectedVersion = typeof body.expectedVersion === 'number' ? body.expectedVersion : null;
+      if (expectedVersion !== null && expectedVersion !== currentVersion) {
+        // Someone else saved a newer version since this client last pulled — reject the write
+        // instead of silently overwriting their changes, and hand back the current state.
+        res.status(409).json({
+          error: 'Conflict: shared state has changed since you last loaded it.',
+          current: { exists: !!currentParsed, version: currentVersion, ...(currentParsed || {}) }
+        });
+        return;
+      }
+
+      const newVersion = currentVersion + 1;
       const updatedAt = new Date().toISOString();
-      const payload = { ...body, updatedAt };
-      const value = JSON.stringify(payload);
-      await redisCommand(['SET', STATE_KEY, value]);
-      res.status(200).json({ ok: true, updatedAt });
-    } catch (err) {
-      res.status(500).json({ error: 'Failed to write state', detail: String(err && err.message ? err.message : err) });
+      const payload = {
+        activities: body.activities,
+        pillars: body.pillars,
+        statuses: body.statuses,
+        owners: body.owners,
+        budget: body.budget,
+        syncStatus: body.syncStatus,
+        version: newVersion,
+        updatedAt
+      };
+      await redisCommand(['SET', STATE_KEY, JSON.stringify(payload)]);
+      res.status(200).json({ ok: true, version: newVersion, updatedAt });
+      return;
     }
-    return;
-  }
 
-  res.status(405).json({ error: 'Method not allowed' });
+    res.status(405).json({ error: 'Method not allowed' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error', detail: String(err && err.message ? err.message : err) });
+  }
 };
