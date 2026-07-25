@@ -579,6 +579,8 @@ let budget = loadList(BUDGET_KEY, DEFAULT_BUDGET);
 const NETWORTH_KEY = 'familyFocusTracker_networth_v1';
 const DEFAULT_NETWORTH = { current: null, prevMonth: null, changeAmount: null, changePct: null, asOfMonth: '', prevMonthLabel: '', fetchedAt: null };
 let netWorth = loadList(NETWORTH_KEY, DEFAULT_NETWORTH);
+const DELTODO_KEY = 'familyFocusTracker_deletedTodoIds_v1';
+let deletedTodoIds = loadList(DELTODO_KEY, []);
 
 function renderNetWorthBadge(){
 const el = document.getElementById('netWorthBadge');
@@ -851,6 +853,7 @@ async function pullTodoTasks(token, targetListId){
   }
   for(const t of all){
     let existing = data.find(a => a.todoTaskId === t.id && a.todoListId === targetListId);
+    if(!existing && deletedTodoIds.includes(t.id)) continue;
     const isComplete = t.status === 'completed';
     const due = t.dueDateTime && t.dueDateTime.dateTime ? t.dueDateTime.dateTime.slice(0,10) : '';
     if(!existing){
@@ -931,6 +934,16 @@ async function pushTodoTasks(token, targetListId){
       }catch(e){ /* skip on failure */ }
     }
   }
+  for(const tid of [...deletedTodoIds]){
+    try{
+      await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + encodeURIComponent(targetListId) + '/tasks/' + encodeURIComponent(tid), token, { method: 'DELETE' });
+      deletedTodoIds = deletedTodoIds.filter(id => id !== tid);
+    }catch(e){
+      if(String((e && e.message) || e).includes('404')) deletedTodoIds = deletedTodoIds.filter(id => id !== tid);
+      // otherwise leave tombstoned, retry on next sync
+    }
+  }
+  saveList(DELTODO_KEY, deletedTodoIds);
 }
 
 async function syncMicrosoftTodo(){
@@ -1525,6 +1538,8 @@ function bulkDelete(){
 if(selectedIds.size === 0) return;
 const n = selectedIds.size;
 if(!confirm('Delete ' + n + ' selected activit' + (n===1?'y':'ies') + '? This can\'t be undone.')) return;
+const removedTodoIds = data.filter(a=>selectedIds.has(a.id) && a.todoTaskId).map(a=>a.todoTaskId);
+if(removedTodoIds.length){ deletedTodoIds.push(...removedTodoIds); saveList(DELTODO_KEY, deletedTodoIds); }
 data = data.filter(a=>!selectedIds.has(a.id));
 persistAll();
 selectedIds.clear();
@@ -1584,6 +1599,8 @@ function saveActivity(){
 function deleteActivity(){
   const idVal = Number(document.getElementById('editId').value);
   if(!confirm('Delete this activity?')) return;
+  const removed = data.find(a=>a.id===idVal);
+  if(removed && removed.todoTaskId){ deletedTodoIds.push(removed.todoTaskId); saveList(DELTODO_KEY, deletedTodoIds); }
   data = data.filter(a=>a.id!==idVal);
   persistAll(); closeModal(); render();
 }
