@@ -838,6 +838,12 @@ function stripFocusTag(title){
   return { focusArea: null, title: title || '' };
 }
 
+function getFieldTs(a, field){
+  if(a.fieldUpdated && a.fieldUpdated[field]) return a.fieldUpdated[field];
+  if(a.updated) return a.updated.length <= 10 ? (a.updated + 'T00:00:00.000Z') : a.updated;
+  return null;
+}
+
 async function pullTodoTasks(token, targetListId){
   // Only read the dedicated "Family Focus Tracker" list -- NOT the user's other
   // personal To Do lists. (Earlier version looped over every list in the account,
@@ -865,8 +871,14 @@ async function pullTodoTasks(token, targetListId){
       if(existing){ existing.todoTaskId = t.id; existing.todoListId = targetListId; }
     }
     if(existing){
-      existing.status = isComplete ? 'Complete' : (existing.status === 'Complete' ? 'In Progress' : existing.status);
-      if(due) existing.due = due;
+      const remoteModified = t.lastModifiedDateTime || null;
+      const localStatusTs = getFieldTs(existing, 'status');
+      const localDueTs = getFieldTs(existing, 'due');
+      if(remoteModified && (!localStatusTs || remoteModified > localStatusTs)){
+        existing.status = isComplete ? 'Complete' : (existing.status === 'Complete' ? 'In Progress' : existing.status);
+      }
+      if(due && remoteModified && (!localDueTs || remoteModified > localDueTs)) existing.due = due;
+      if(remoteModified) existing.remoteModified = remoteModified;
     } else {
       const parsed = stripFocusTag(t.title);
       const nextId = Math.max(0, ...data.map(a=>a.id), 0) + 1;
@@ -927,11 +939,20 @@ async function pushTodoTasks(token, targetListId){
       // Tracker list. Never touch tasks in the user's other personal lists,
       // even if a stray activity record still references one (leftover from
       // an earlier bug where pull briefly imported all lists).
-      try{
-        await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + encodeURIComponent(a.todoListId) + '/tasks/' + encodeURIComponent(a.todoTaskId), token, {
-          method: 'PATCH', body: JSON.stringify({ status: a.status === 'Complete' ? 'completed' : 'notStarted' })
-        });
-      }catch(e){ /* skip on failure */ }
+      const remoteTs = a.remoteModified || null;
+      const localWins = (field) => { const ts = getFieldTs(a, field); return !!ts && (!remoteTs || ts > remoteTs); };
+      const patchBody = {};
+      if(localWins('status')) patchBody.status = a.status === 'Complete' ? 'completed' : 'notStarted';
+      if(localWins('due') && a.due) patchBody.dueDateTime = { dateTime: a.due + 'T00:00:00', timeZone: 'UTC' };
+      if(localWins('title')) patchBody.title = '[' + a.pillar + '] ' + a.title;
+      if(localWins('notes')) patchBody.body = { content: a.notes || '', contentType: 'text' };
+      if(Object.keys(patchBody).length){
+        try{
+          await graphFetch('https://graph.microsoft.com/v1.0/me/todo/lists/' + encodeURIComponent(a.todoListId) + '/tasks/' + encodeURIComponent(a.todoTaskId), token, {
+            method: 'PATCH', body: JSON.stringify(patchBody)
+          });
+        }catch(e){ /* skip on failure */ }
+      }
     }
   }
   for(const tid of [...deletedTodoIds]){
@@ -1517,7 +1538,8 @@ function bulkMarkComplete(){
 if(selectedIds.size === 0) return;
 const completeStatus = statuses.some(s=>s.name==='Complete') ? 'Complete' : (statuses[0] ? statuses[0].name : 'Complete');
 const today = new Date().toISOString().slice(0,10);
-data.forEach(a=>{ if(selectedIds.has(a.id)){ a.status = completeStatus; a.updated = today; } });
+const nowTs = new Date().toISOString();
+data.forEach(a=>{ if(selectedIds.has(a.id)){ a.status = completeStatus; a.updated = today; a.fieldUpdated = {...(a.fieldUpdated||{}), status: nowTs}; } });
 persistAll();
 selectedIds.clear();
 render();
@@ -1528,7 +1550,8 @@ if(selectedIds.size === 0) return;
 const val = document.getElementById('bulkDueDate').value;
 if(!val){ alert('Pick a due date first.'); return; }
 const today = new Date().toISOString().slice(0,10);
-data.forEach(a=>{ if(selectedIds.has(a.id)){ a.due = val; a.updated = today; } });
+const nowTs = new Date().toISOString();
+data.forEach(a=>{ if(selectedIds.has(a.id)){ a.due = val; a.updated = today; a.fieldUpdated = {...(a.fieldUpdated||{}), due: nowTs}; } });
 persistAll();
 selectedIds.clear();
 render();
@@ -1592,8 +1615,15 @@ function saveActivity(){
     notes: document.getElementById('f-notes').value.trim(),
     updated: new Date().toISOString().slice(0,10)
   };
-  if(idVal){ const idx = data.findIndex(x=>x.id===Number(idVal)); data[idx] = {...data[idx], ...payload}; }
-  else { const newId = data.length ? Math.max(...data.map(a=>a.id))+1 : 1; data.push({id:newId, ...payload}); }
+  const now = new Date().toISOString();
+  if(idVal){
+    const idx = data.findIndex(x=>x.id===Number(idVal));
+    const prev = data[idx];
+    const fu = { ...(prev.fieldUpdated||{}) };
+    ['title','status','due','notes'].forEach(f => { if(prev[f] !== payload[f]) fu[f] = now; });
+    data[idx] = {...prev, ...payload, fieldUpdated: fu};
+  }
+  else { const newId = data.length ? Math.max(...data.map(a=>a.id))+1 : 1; data.push({id:newId, ...payload, fieldUpdated: { title: now, status: now, due: now, notes: now }}); }
   persistAll(); closeModal(); render();
 }
 function deleteActivity(){
