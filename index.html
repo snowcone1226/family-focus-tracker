@@ -1108,7 +1108,7 @@ function handleGmailImportCarine(){
 async function scanGmailAndImport(){
   const scanParams = new URLSearchParams(location.search);
   const lookbackDays = parseInt(scanParams.get('days'), 10) || 30;
-  const maxResults = parseInt(scanParams.get('max'), 10) || 40;
+  const maxResults = parseInt(scanParams.get('max'), 10) || 100;
   window.lastScanLookbackDays = lookbackDays;
   const isCarine = activeGmailOwner === 'Carine';
   const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;
@@ -1116,11 +1116,18 @@ async function scanGmailAndImport(){
   const idleLabel = isCarine ? "✉ Sync Carine's Gmail" : '✉ Scan My Gmail (30 days)';
   setGmailBtnState(btnId, 'Scanning inbox…', true);
   try{
-    const listUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=' + maxResults + '&q=' + encodeURIComponent('newer_than:' + lookbackDays + 'd -category:promotions -category:social');
-    const listResp = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + token } });
-    if(!listResp.ok) throw new Error('Gmail list request failed (' + listResp.status + ')');
-    const listData = await listResp.json();
-    const ids = (listData.messages || []).map(m=>m.id);
+    const allIds = [];
+    let pageToken = '';
+    const HARD_CAP = 500;
+    do {
+      const listUrl = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=' + maxResults + '&q=' + encodeURIComponent('newer_than:' + lookbackDays + 'd -category:promotions -category:social') + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+      const listResp = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + token } });
+      if(!listResp.ok) throw new Error('Gmail list request failed (' + listResp.status + ')');
+      const listData = await listResp.json();
+      allIds.push(...(listData.messages || []).map(m=>m.id));
+      pageToken = listData.nextPageToken || '';
+    } while(pageToken && allIds.length < HARD_CAP);
+    const ids = allIds;
     if(ids.length === 0){
       setGmailBtnState(btnId, idleLabel, false);
       alert('No messages found in the last ' + lookbackDays + ' days matching the scan criteria.');
