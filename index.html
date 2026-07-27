@@ -980,6 +980,10 @@ async function pushTodoTasks(token, targetListId){
 }
 
 async function syncMicrosoftTodo(){
+  // Pull the latest shared state first so we're merging To Do changes
+  // against up-to-date dashboard data, not a possibly-stale local copy
+  // (avoids losing this merge to a version conflict when we save at the end).
+  await pullRemoteState();
   syncInProgress = true;
   try{
     const token = await getGraphToken();
@@ -1127,10 +1131,14 @@ async function scanGmailAndImport(){
       allIds.push(...(listData.messages || []).map(m=>m.id));
       pageToken = listData.nextPageToken || '';
     } while(pageToken && allIds.length < HARD_CAP);
-    const ids = allIds;
+    const SEEN_KEY = 'familyFocusTracker_seenEmailIds_' + (isCarine ? 'Carine' : 'Allen') + '_v1';
+    const seenIds = new Set(loadList(SEEN_KEY, []));
+    const ids = allIds.filter(id => !seenIds.has(id));
     if(ids.length === 0){
       setGmailBtnState(btnId, idleLabel, false);
-      alert('No messages found in the last ' + lookbackDays + ' days matching the scan criteria.');
+      alert(allIds.length === 0
+        ? 'No messages found in the last ' + lookbackDays + ' days matching the scan criteria.'
+        : 'No new messages to review — all ' + allIds.length + ' matching emails from the last ' + lookbackDays + ' days were already scanned in a previous sync.');
       return;
     }
 
@@ -1179,6 +1187,8 @@ async function scanGmailAndImport(){
     }
     const parsed = await parseResp.json();
     const tasks = parsed.tasks || [];
+    tasks.forEach(tk => seenIds.add(tk.emailId));
+    saveList(SEEN_KEY, Array.from(seenIds).slice(-3000));
 
     if(isCarine) syncStatus.gmailCarine = new Date().toISOString().slice(0,10);
     else syncStatus.gmailAllen = new Date().toISOString().slice(0,10);
@@ -1249,6 +1259,7 @@ function renderImportReview(){
       <input type="checkbox" class="import-check" ${t.selected?'checked':''} style="margin-top:5px; flex-shrink:0;">
       <div style="flex:1; min-width:0;">
         <input type="text" class="import-title" style="width:100%; font-weight:700; border:1px solid var(--gray-200); border-radius:6px; padding:5px 8px; font-size:13px; margin-bottom:6px; font-family:inherit; color:var(--gray-900);">
+        ${(t.sourceSubject && t.sourceSubject.trim() && t.sourceSubject.trim() !== t.title.trim()) ? `<div class="import-title-toggle" style="font-size:11px; color:var(--gray-500); margin-bottom:6px; cursor:pointer; text-decoration:underline; text-underline-offset:2px;">Use original email subject instead: “${escapeHtml(t.sourceSubject.length>70? t.sourceSubject.slice(0,70)+'…' : t.sourceSubject)}”</div>` : ''}
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <select class="import-pillar" style="border:1px solid var(--gray-200); border-radius:6px; padding:4px 6px; font-size:12px;"></select>
           <select class="import-priority" style="border:1px solid var(--gray-200); border-radius:6px; padding:4px 6px; font-size:12px;">
@@ -1266,6 +1277,14 @@ function renderImportReview(){
     const titleEl = row.querySelector('.import-title');
     titleEl.value = t.title;
     titleEl.addEventListener('input', ()=> t.title = titleEl.value);
+
+    const useOrigEl = row.querySelector('.import-title-toggle');
+    if(useOrigEl){
+      useOrigEl.addEventListener('click', ()=>{
+        titleEl.value = t.sourceSubject;
+        t.title = t.sourceSubject;
+      });
+    }
 
     const pillarEl = row.querySelector('.import-pillar');
     pillarEl.innerHTML = pillars.map(p=>`<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
@@ -1294,6 +1313,7 @@ function addSelectedImportedTasks(){
     data.push({
       id: nextId,
       title: t.title,
+      sourceThreadId: t.sourceThreadId || '',
       pillar: pillars.some(p=>p.name===t.focusArea) ? t.focusArea : pillars[0].name,
       owner: t.owner || owners[0] || 'Allen',
       priority: t.priority,
