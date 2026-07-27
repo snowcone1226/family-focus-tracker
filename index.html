@@ -221,6 +221,18 @@
   </div>
 </div>
 
+<div class="grid-main" style="grid-template-columns:repeat(2,1fr); margin-top:16px;">
+  <div class="card">
+    <h3>Priority mix</h3>
+    <div class="card-sub">All activities, by priority</div>
+    <div id="priorityList"></div>
+  </div>
+  <div class="card">
+    <h3>Due by month</h3>
+    <div class="card-sub">Upcoming workload over time</div>
+    <div id="dueMonthList"></div>
+  </div>
+</div>
 <div class="pillars" id="pillarCards"></div>
 
 <div class="table-card">
@@ -240,7 +252,7 @@
 <button style="margin-left:auto; border:none; background:transparent; color:var(--gray-500); cursor:pointer; font-size:12.5px; font-weight:600;" onclick="clearSelection()">Clear selection</button>
 </div>
   <table>
-    <thead><tr><th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th><th>Activity</th><th>Focus area</th><th>Owner</th><th>Priority</th><th>Status</th><th>Due</th><th></th></tr></thead>
+    <thead><tr><th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th><th style="cursor:pointer;" onclick="setSort('title')">Activity<span class="sort-ind" data-col="title"></span></th><th style="cursor:pointer;" onclick="setSort('pillar')">Focus area<span class="sort-ind" data-col="pillar"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('pillar', this.value)" id="filterPillarSel" style="font-size:11px; margin-top:4px; max-width:110px;"></select></th><th style="cursor:pointer;" onclick="setSort('owner')">Owner<span class="sort-ind" data-col="owner"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('owner', this.value)" id="filterOwnerSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('priority')">Priority<span class="sort-ind" data-col="priority"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('priority', this.value)" id="filterPrioritySel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('status')">Status<span class="sort-ind" data-col="status"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('status', this.value)" id="filterStatusSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('due')">Due<span class="sort-ind" data-col="due"></span></th><th></th></tr></thead>
     <tbody id="tableBody"></tbody>
   </table>
 </div>
@@ -1297,15 +1309,17 @@ function setFilter(f){
   renderStats();
   renderDonut();
   renderPipeline();
+  renderPriority();
+  renderDueMonths();
   renderPillars();
   renderTable();
 }
-function clearFilter(){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderPillars(); renderTable(); }
+function clearFilter(){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderPriority(); renderDueMonths(); renderPillars(); renderTable(); }
 function statusFilter(status){ return {key:'status-'+status, label:status, test:(a)=>a.status===status}; }
 function pillarFilter(name){ return {key:'pillar-'+name, label:name, test:(a)=>a.pillar===name}; }
 
 function scrollToActivity(id){
-  if(activeFilter){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderTable(); }
+  if(activeFilter){ activeFilter = null; renderStats(); renderDonut(); renderPipeline(); renderPriority(); renderDueMonths(); renderTable(); }
   requestAnimationFrame(()=>{
     const el = document.getElementById('row-'+id);
     if(!el) return;
@@ -1321,7 +1335,7 @@ function render(){
   renderBudgetCard();
 renderNetWorthBadge();
   renderSyncBar();
-  renderStats(); renderDonut(); renderPipeline(); renderAttention(); renderPillars(); renderTable();
+  renderStats(); renderDonut(); renderPipeline(); renderPriority(); renderDueMonths(); renderAttention(); renderPillars(); renderTable();
   document.getElementById('refreshedAt').textContent = new Date().toLocaleString('en-US',{hour:'numeric',minute:'2-digit',month:'short',day:'numeric'});
   document.getElementById('dateSub').textContent = `Weekly review · ${data.length} activities across ${pillars.length} focus areas`;
 }
@@ -1412,6 +1426,51 @@ function renderDonut(){
   });
 }
 
+function priorityFilter(p){ return {key:'priority-'+p, label:p, test:(a)=>a.priority===p}; }
+function dueMonthKey(dueStr){ return dueStr ? dueStr.slice(0,7) : null; }
+function dueMonthLabel(key){ if(!key) return 'No due date'; const parts = key.split('-'); const y = Number(parts[0]), m = Number(parts[1]); return new Date(y, m-1, 1).toLocaleString('en-US',{month:'short', year:'numeric'}); }
+function dueMonthFilter(key){ return {key:'duemonth-'+key, label: dueMonthLabel(key==='none'?null:key), test:(a)=> (dueMonthKey(a.due)||'none')===key}; }
+
+function renderPriority(){
+  const order = ['High','Medium','Low'];
+  const counts = {}; order.forEach(p=>counts[p]=0);
+  data.forEach(a=>{ const p = a.priority || 'Medium'; counts[p] = (counts[p]||0)+1; });
+  const keys = order.filter(p=>counts[p]!==undefined).concat(Object.keys(counts).filter(p=>!order.includes(p)));
+  const max = Math.max(1, ...Object.values(counts));
+  document.getElementById('priorityList').innerHTML = keys.map(p=>{
+    const count = counts[p];
+    const isActive = activeFilter && activeFilter.key === 'priority-'+p;
+    const color = (PRIORITY_COLORS[p] && PRIORITY_COLORS[p].main) || '#6b7280';
+    return `<div class="pipeline-row${isActive?' active':''}" data-priority="${escapeHtml(p)}">
+      <div class="top"><span class="name">${escapeHtml(p)}</span><span class="val">${count}</span></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${(count/max*100)}%; background:${color}"></div></div>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#priorityList .pipeline-row').forEach(el=>{
+    el.addEventListener('click', ()=> setFilter(priorityFilter(el.dataset.priority)));
+  });
+}
+
+function renderDueMonths(){
+  const counts = {};
+  data.forEach(a=>{ const k = dueMonthKey(a.due) || 'none'; counts[k]=(counts[k]||0)+1; });
+  const keys = Object.keys(counts).filter(k=>k!=='none').sort();
+  if(counts['none']) keys.push('none');
+  const max = Math.max(1, ...Object.values(counts));
+  document.getElementById('dueMonthList').innerHTML = keys.map(k=>{
+    const count = counts[k];
+    const label = k==='none' ? 'No due date' : dueMonthLabel(k);
+    const isActive = activeFilter && activeFilter.key === 'duemonth-'+k;
+    return `<div class="pipeline-row${isActive?' active':''}" data-month="${escapeHtml(k)}">
+      <div class="top"><span class="name">${escapeHtml(label)}</span><span class="val">${count}</span></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${(count/max*100)}%; background:#2564cf"></div></div>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('#dueMonthList .pipeline-row').forEach(el=>{
+    el.addEventListener('click', ()=> setFilter(dueMonthFilter(el.dataset.month)));
+  });
+}
+
 function renderPipeline(){
   const counts = {}; statuses.forEach(s=>counts[s.name]=0);
   data.forEach(a=>{ if(counts[a.status]===undefined) counts[a.status]=0; counts[a.status]++; });
@@ -1476,8 +1535,22 @@ function renderFilterPill(){
 
 function renderTable(){
   renderFilterPill();
-  const base = activeFilter ? data.filter(activeFilter.test) : data;
-  const sorted = [...base].sort((a,b)=> daysUntil(a.due)-daysUntil(b.due));
+  populateColumnFilterSelects();
+  updateSortIndicators();
+  let base = activeFilter ? data.filter(activeFilter.test) : data;
+  if(columnFilters.pillar) base = base.filter(a=>a.pillar===columnFilters.pillar);
+  if(columnFilters.owner) base = base.filter(a=>a.owner===columnFilters.owner);
+  if(columnFilters.priority) base = base.filter(a=>a.priority===columnFilters.priority);
+  if(columnFilters.status) base = base.filter(a=>a.status===columnFilters.status);
+  const cmp = {
+    title: (a,b)=> (a.title||'').localeCompare(b.title||''),
+    pillar: (a,b)=> (a.pillar||'').localeCompare(b.pillar||''),
+    owner: (a,b)=> (a.owner||'').localeCompare(b.owner||''),
+    priority: (a,b)=> { const order={High:0,Medium:1,Low:2}; return (order[a.priority]??3)-(order[b.priority]??3); },
+    status: (a,b)=> (a.status||'').localeCompare(b.status||''),
+    due: (a,b)=> daysUntil(a.due)-daysUntil(b.due)
+  };
+  const sorted = [...base].sort((a,b)=> (cmp[sortCol]||cmp.due)(a,b) * sortDir);
   document.getElementById('tableBody').innerHTML = sorted.map(a=>{
     const pc = PRIORITY_COLORS[a.priority] || PRIORITY_COLORS['Medium'];
     const sc = statusByName(a.status).color;
@@ -1499,6 +1572,45 @@ updateBulkBar();
 
 // --- Bulk selection & actions ---
 let selectedIds = new Set();
+let sortCol = 'due', sortDir = 1;
+let columnFilters = { pillar:'', owner:'', priority:'', status:'' };
+
+function setSort(col){
+  if(sortCol === col) sortDir = -sortDir; else { sortCol = col; sortDir = 1; }
+  renderTable();
+}
+
+function setColumnFilter(col, val){
+  columnFilters[col] = val;
+  renderTable();
+}
+
+function populateColumnFilterSelects(){
+  const specs = [
+    ['filterPillarSel', pillars.map(p=>p.name), columnFilters.pillar],
+    ['filterOwnerSel', owners, columnFilters.owner],
+    ['filterPrioritySel', Object.keys(PRIORITY_COLORS), columnFilters.priority],
+    ['filterStatusSel', statuses.map(s=>s.name), columnFilters.status]
+  ];
+  specs.forEach(([id, opts, val])=>{
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    const sig = opts.join('|');
+    if(sel.dataset.rendered !== sig){
+      sel.innerHTML = '<option value="">All</option>' + opts.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
+      sel.dataset.rendered = sig;
+    }
+    sel.value = val || '';
+  });
+}
+
+function updateSortIndicators(){
+  document.querySelectorAll('.sort-ind').forEach(el=>{
+    const col = el.dataset.col;
+    el.textContent = col===sortCol ? (sortDir===1 ? ' ▲' : ' ▼') : '';
+  });
+}
+
 
 function toggleSelectRow(id, checked){
 if(checked) selectedIds.add(id); else selectedIds.delete(id);
