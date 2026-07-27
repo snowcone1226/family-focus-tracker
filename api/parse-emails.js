@@ -103,7 +103,8 @@ For each actionable email, call the extract_tasks tool with a concise task list.
     const enriched = allTasks.map((t) => ({
       ...t,
       sourceSubject: byId[t.emailId] ? byId[t.emailId].subject : '',
-      sourceFrom: byId[t.emailId] ? byId[t.emailId].from : ''
+      sourceFrom: byId[t.emailId] ? byId[t.emailId].from : '',
+      sourceThreadId: byId[t.emailId] ? (byId[t.emailId].threadId || '') : ''
     }));
 
     res.status(200).json({ tasks: enriched });
