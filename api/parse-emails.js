@@ -26,6 +26,8 @@ module.exports = async (req, res) => {
 
 ${scopeParagraph}
 
+Regardless of the scope above, always include an email as actionable if its body contains an explicit request to add it to the tracker — phrases such as "add to the tracker", "add this to the tracker", "track this", "put this on the tracker", or similar variations. Treat that phrase as an unconditional instruction to create a task for that email, even if nothing else about the email would otherwise seem actionable.
+
 For each actionable email, call the extract_tasks tool with a concise task list. Use the exact "id" value given for each email as "emailId". Keep titles short and action-oriented (e.g. "Reply to Sarah re: Q3 budget review", not "Email about budget"). If nothing in the batch is actionable, call the tool with an empty tasks array.`;
 
   const tool = {
