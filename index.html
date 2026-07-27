@@ -181,6 +181,7 @@
     <button class="btn" id="syncCarineBtn" style="flex-shrink:0;" onclick="handleGmailImportCarine()">✉ Sync Carine's Gmail</button>
     <button class="btn" id="syncNowBtn" style="flex-shrink:0;" onclick="handleSyncNow()">⟳ Sync now</button>
   </div>
+  <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--gray-600); margin-top:8px; flex-basis:100%;"><input type="checkbox" id="scanAggressiveToggle" onchange="setScanAggressive(this.checked)"> Scan more aggressively (include more borderline items automatically)</label>
 </div>
 
 <div class="stats" id="statsRow"></div>
@@ -1179,7 +1180,7 @@ async function scanGmailAndImport(){
     const parseResp = await fetch('/api/parse-emails', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ emails, owner: isCarine ? 'Carine' : 'Allen' })
+      body: JSON.stringify({ emails, owner: isCarine ? 'Carine' : 'Allen', aggressive: isScanAggressive() })
     });
     if(!parseResp.ok){
       const errBody = await parseResp.text();
@@ -1241,7 +1242,8 @@ function openImportReview(tasks){
     sourceFrom: t.sourceFrom || '',
     sourceThreadId: t.sourceThreadId || '',
     owner: owner,
-    selected: true
+    confidence: t.confidence === 'low' ? 'low' : 'high',
+    selected: t.confidence !== 'low'
   }));
   renderImportReview();
   document.getElementById('importReviewOverlay').classList.add('open');
@@ -1254,7 +1256,7 @@ function renderImportReview(){
   const list = document.getElementById('importReviewList');
   document.getElementById('importReviewSub').textContent =
     importCandidates.length + ' candidate task' + (importCandidates.length===1?'':'s') + ' found from the last ' + (window.lastScanLookbackDays || 30) + ' days. Uncheck any you don\'t want, edit as needed, then add.';
-  list.innerHTML = importCandidates.map((t,i)=>`
+  const importRowHtml = (t,i)=>`
     <div class="import-row" data-idx="${i}" style="border:1px solid var(--gray-200); border-radius:10px; padding:10px 12px; margin-bottom:10px; display:flex; gap:10px; align-items:flex-start; ${t.selected?'':'opacity:0.5;'}">
       <input type="checkbox" class="import-check" ${t.selected?'checked':''} style="margin-top:5px; flex-shrink:0;">
       <div style="flex:1; min-width:0;">
@@ -1268,7 +1270,14 @@ function renderImportReview(){
         </div>
         <div style="color:var(--gray-500); font-size:11.5px; margin-top:6px;">${escapeHtml(t.sourceFrom)}${t.sourceSubject? ' · '+escapeHtml(t.sourceSubject):''}${t.sourceThreadId? ' · <a href="https://mail.google.com/mail/u/0/#all/'+encodeURIComponent(t.sourceThreadId)+'" target="_blank" style="color:var(--blue);">View email</a>':''}</div>
       </div>
-    </div>`).join('');
+    </div>`;
+  const highIdx = importCandidates.map((_,x)=>x).filter(x=>importCandidates[x].confidence !== 'low');
+  const lowIdx = importCandidates.map((_,x)=>x).filter(x=>importCandidates[x].confidence === 'low');
+  list.innerHTML =
+    (highIdx.length ? '<div style="font-size:12px; font-weight:700; color:var(--gray-700); margin-bottom:8px;">Tasks to review</div>' : '') +
+    highIdx.map(x=>importRowHtml(importCandidates[x], x)).join('') +
+    (lowIdx.length ? '<div style="font-size:12px; font-weight:700; color:var(--gray-600); margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--gray-200);">Potential tasks — less obvious, review before adding</div>' : '') +
+    lowIdx.map(x=>importRowHtml(importCandidates[x], x)).join('');
 
   list.querySelectorAll('.import-row').forEach((row)=>{
     const i = Number(row.dataset.idx);
@@ -1949,6 +1958,11 @@ function removeItem(kind, idx){
 document.getElementById('modalOverlay').addEventListener('click', (e)=>{ if(e.target.id==='modalOverlay') closeModal(); });
 document.getElementById('manageOverlay').addEventListener('click', (e)=>{ if(e.target.id==='manageOverlay') closeManage(); });
 
+const SCAN_AGGRESSIVE_KEY = 'familyFocusTracker_scanAggressive_v1';
+function isScanAggressive(){ return localStorage.getItem(SCAN_AGGRESSIVE_KEY) === 'true'; }
+function setScanAggressive(val){ localStorage.setItem(SCAN_AGGRESSIVE_KEY, val ? 'true' : 'false'); }
+const __aggToggle = document.getElementById('scanAggressiveToggle');
+if(__aggToggle) __aggToggle.checked = isScanAggressive();
 render();
 pullRemoteState();
 </script>
