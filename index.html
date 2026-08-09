@@ -249,6 +249,13 @@
 <button class="btn" style="padding:6px 12px; font-size:12.5px;" onclick="bulkMarkComplete()">✓ Mark Complete</button>
 <input type="date" id="bulkDueDate" style="padding:8px 10px; border:1px solid var(--gray-200); border-radius:9px; font-size:12.5px;">
 <button class="btn" style="padding:6px 12px; font-size:12.5px;" onclick="bulkSetDueDate()">Set Due Date</button>
+<select id="bulkPriority" style="padding:8px 10px; border:1px solid var(--gray-200); border-radius:9px; font-size:12.5px;">
+<option value="">Priority…</option>
+<option value="High">High</option>
+<option value="Medium">Medium</option>
+<option value="Low">Low</option>
+</select>
+<button class="btn" style="padding:6px 12px; font-size:12.5px;" onclick="bulkSetPriority()">Set Priority</button>
 <button class="btn" style="padding:6px 12px; font-size:12.5px; color:#e0245e; border-color:#f8c9d4;" onclick="bulkDelete()">🗑 Delete</button>
 <button style="margin-left:auto; border:none; background:transparent; color:var(--gray-500); cursor:pointer; font-size:12.5px; font-weight:600;" onclick="clearSelection()">Clear selection</button>
 </div>
@@ -1701,6 +1708,19 @@ const today = new Date().toISOString().slice(0,10);
 const nowTs = new Date().toISOString();
 data.forEach(a=>{ if(selectedIds.has(a.id)){ a.due = val; a.updated = today; a.fieldUpdated = {...(a.fieldUpdated||{}), due: nowTs}; } });
 persistAll();
+selectedIds.clear();
+render();
+}
+
+function bulkSetPriority(){
+if(selectedIds.size === 0) return;
+const val = document.getElementById('bulkPriority').value;
+if(!val){ alert('Pick a priority first.'); return; }
+const today = new Date().toISOString().slice(0,10);
+const nowTs = new Date().toISOString();
+data.forEach(a=>{ if(selectedIds.has(a.id)){ a.priority = val; a.updated = today; a.fieldUpdated = {...(a.fieldUpdated||{}), priority: nowTs}; } });
+persistAll();
+const sel = document.getElementById('bulkPriority'); if(sel) sel.value = '';
 selectedIds.clear();
 render();
 }
