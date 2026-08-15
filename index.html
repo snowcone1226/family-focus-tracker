@@ -107,6 +107,8 @@
   .pillar-card{background:#fff; border-radius:var(--radius); padding:16px; border-top:4px solid var(--blue); box-shadow:0 1px 2px rgba(0,0,0,0.04); transition:box-shadow .15s;}
   .pillar-card:hover{box-shadow:0 2px 8px rgba(0,0,0,0.1);}
   .pillar-card, .pillar-card .ring, .pillar-card .ring-inner, .pillar-card .pillar-name, .pillar-top{transition:padding .18s ease, width .18s ease, height .18s ease, font-size .18s ease, margin .18s ease, gap .18s ease;}
+  .pillars{position:sticky; top:0; z-index:30;}
+  .pillars.pillars-compact{background:var(--gray-50); box-shadow:0 8px 16px -8px rgba(0,0,0,0.18); gap:10px; padding:8px 24px; margin-left:-24px; margin-right:-24px;}
   .pillars.pillars-compact .pillar-card{padding:8px 12px;}
   .pillars.pillars-compact .pillar-top{gap:8px;}
   .pillars.pillars-compact .ring{width:30px; height:30px;}
@@ -121,9 +123,19 @@
   .pillars.pillars-compact:hover .pillar-count{display:block;}
   .btn-stack{flex-direction:column; gap:1px; align-items:center; padding:6px 12px; line-height:1.25;}
   .btn-sub{font-size:9.5px; font-weight:500; color:var(--gray-500); white-space:nowrap;}
-  thead select[multiple]{overflow-y:auto; border:1px solid var(--gray-200); border-radius:6px; padding:2px; background:#fff;}
-  thead select[multiple] option{padding:1px 4px; border-radius:4px;}
-  thead select[multiple] option:checked{background:var(--blue-light) linear-gradient(0deg, var(--blue-light) 0%, var(--blue-light) 100%); color:var(--blue); font-weight:700;}
+  .msf-btn{display:flex; align-items:center; justify-content:space-between; gap:6px; width:100%; min-width:104px; max-width:150px; margin-top:4px; padding:5px 8px; font-size:11px; font-weight:600; text-align:left; color:var(--gray-700); background:#fff; border:1px solid var(--gray-200); border-radius:7px; cursor:pointer;}
+  .msf-btn:hover{border-color:var(--gray-500);}
+  .msf-btn.active{border-color:var(--blue); color:var(--blue); background:var(--blue-light);}
+  .msf-txt{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .msf-caret{font-size:9px; opacity:0.65; flex-shrink:0;}
+  .msf-menu{position:fixed; display:none; z-index:45; background:#fff; border:1px solid var(--gray-200); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.14); padding:5px; min-width:160px; max-height:260px; overflow-y:auto;}
+  .msf-menu.open{display:block;}
+  .msf-opt{display:flex; align-items:center; gap:8px; padding:6px 8px; font-size:12px; font-weight:500; color:var(--gray-700); border-radius:6px; cursor:pointer; white-space:nowrap; text-transform:none; letter-spacing:normal;}
+  .msf-opt:hover{background:var(--gray-50);}
+  .msf-opt input{margin:0; cursor:pointer; flex-shrink:0;}
+  .msf-foot{border-top:1px solid var(--gray-100); margin-top:4px; padding-top:4px;}
+  .msf-foot button{width:100%; padding:5px; border:0; background:none; font-size:11px; font-weight:600; color:var(--blue); cursor:pointer; border-radius:6px;}
+  .msf-foot button:hover{background:var(--blue-light);}
   .pillar-top{display:flex; align-items:center; gap:12px;}
   .ring{width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .ring-inner{width:38px; height:38px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
@@ -251,6 +263,7 @@
     <div id="dueMonthList"></div>
   </div>
 </div>
+<div id="pillarSentinel"></div>
 <div class="pillars" id="pillarCards"></div>
 
 <div class="table-card">
@@ -277,12 +290,19 @@
 <button style="margin-left:auto; border:none; background:transparent; color:var(--gray-500); cursor:pointer; font-size:12.5px; font-weight:600;" onclick="clearSelection()">Clear selection</button>
 </div>
   <table>
-    <thead><tr><th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th><th style="cursor:pointer;" onclick="setSort('title')">Activity<span class="sort-ind" data-col="title"></span></th><th style="cursor:pointer;" onclick="setSort('pillar')">Focus area<span class="sort-ind" data-col="pillar"></span><br><select onclick="event.stopPropagation()" multiple size="4" onmousedown="msPick(event,'pillar')" onchange="setColumnFilter('pillar', Array.from(this.selectedOptions).map(o=>o.value))" id="filterPillarSel" style="font-size:11px; margin-top:4px; max-width:150px; min-width:120px;"></select></th><th style="cursor:pointer;" onclick="setSort('owner')">Owner<span class="sort-ind" data-col="owner"></span><br><select onclick="event.stopPropagation()" multiple size="3" onmousedown="msPick(event,'owner')" onchange="setColumnFilter('owner', Array.from(this.selectedOptions).map(o=>o.value))" id="filterOwnerSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('priority')">Priority<span class="sort-ind" data-col="priority"></span><br><select onclick="event.stopPropagation()" multiple size="3" onmousedown="msPick(event,'priority')" onchange="setColumnFilter('priority', Array.from(this.selectedOptions).map(o=>o.value))" id="filterPrioritySel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('status')">Status<span class="sort-ind" data-col="status"></span><br><select onclick="event.stopPropagation()" multiple size="4" onmousedown="msPick(event,'status')" onchange="setColumnFilter('status', Array.from(this.selectedOptions).map(o=>o.value))" id="filterStatusSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('due')">Due<span class="sort-ind" data-col="due"></span></th><th></th></tr></thead>
+    <thead><tr><th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th><th style="cursor:pointer;" onclick="setSort('title')">Activity<span class="sort-ind" data-col="title"></span></th><th style="cursor:pointer;" onclick="setSort('pillar')">Focus area<span class="sort-ind" data-col="pillar"></span><br><button type="button" class="msf-btn" id="msfBtnPillar" onclick="msfToggle(event,'pillar')"><span class="msf-txt">All</span><span class="msf-caret">▾</span></button></th><th style="cursor:pointer;" onclick="setSort('owner')">Owner<span class="sort-ind" data-col="owner"></span><br><button type="button" class="msf-btn" id="msfBtnOwner" onclick="msfToggle(event,'owner')"><span class="msf-txt">All</span><span class="msf-caret">▾</span></button></th><th style="cursor:pointer;" onclick="setSort('priority')">Priority<span class="sort-ind" data-col="priority"></span><br><button type="button" class="msf-btn" id="msfBtnPriority" onclick="msfToggle(event,'priority')"><span class="msf-txt">All</span><span class="msf-caret">▾</span></button></th><th style="cursor:pointer;" onclick="setSort('status')">Status<span class="sort-ind" data-col="status"></span><br><button type="button" class="msf-btn" id="msfBtnStatus" onclick="msfToggle(event,'status')"><span class="msf-txt">All</span><span class="msf-caret">▾</span></button></th><th style="cursor:pointer;" onclick="setSort('due')">Due<span class="sort-ind" data-col="due"></span></th><th></th></tr></thead>
     <tbody id="tableBody"></tbody>
   </table>
 </div>
 
 <div class="footer-note">Family Focus Tracker · synced across devices · last refreshed <span id="refreshedAt"></span></div>
+
+<div id="msfMenus">
+  <div class="msf-menu" id="msfMenuPillar"></div>
+  <div class="msf-menu" id="msfMenuOwner"></div>
+  <div class="msf-menu" id="msfMenuPriority"></div>
+  <div class="msf-menu" id="msfMenuStatus"></div>
+</div>
 
 <!-- Add/Edit Activity Modal -->
 <div class="modal-overlay" id="modalOverlay">
@@ -1656,16 +1676,6 @@ function setColumnFilter(col, val){
   renderTable();
 }
 
-// A plain click toggles one option in a multi-select (no Ctrl/Cmd needed).
-function msPick(ev, col){
-  const opt = ev.target;
-  if(!opt || opt.tagName !== 'OPTION') return;
-  ev.preventDefault();
-  opt.selected = !opt.selected;
-  const sel = ev.currentTarget;
-  setColumnFilter(col, Array.from(sel.selectedOptions).map(o=>o.value));
-}
-
 function togglePillarFilter(name){
   const i = columnFilters.pillar.indexOf(name);
   if(i === -1) columnFilters.pillar.push(name); else columnFilters.pillar.splice(i, 1);
@@ -1673,25 +1683,70 @@ function togglePillarFilter(name){
   renderTable();
 }
 
+const MSF_CAP = { pillar:'Pillar', owner:'Owner', priority:'Priority', status:'Status' };
+function msfOptions(col){
+  if(col === 'pillar') return pillars.map(p=>p.name);
+  if(col === 'owner') return owners;
+  if(col === 'priority') return Object.keys(PRIORITY_COLORS);
+  return statuses.map(s=>s.name);
+}
+
+// Each column filter is a closed dropdown button that opens a checkbox menu,
+// so several options can be picked at once without a permanent list box.
 function populateColumnFilterSelects(){
-  const specs = [
-    ['filterPillarSel', pillars.map(p=>p.name), columnFilters.pillar],
-    ['filterOwnerSel', owners, columnFilters.owner],
-    ['filterPrioritySel', Object.keys(PRIORITY_COLORS), columnFilters.priority],
-    ['filterStatusSel', statuses.map(s=>s.name), columnFilters.status]
-  ];
-  specs.forEach(([id, opts, val])=>{
-    const sel = document.getElementById(id);
-    if(!sel) return;
+  Object.keys(MSF_CAP).forEach(col=>{
+    const C = MSF_CAP[col];
+    const btn = document.getElementById('msfBtn' + C);
+    const menu = document.getElementById('msfMenu' + C);
+    if(!btn || !menu) return;
+    const opts = msfOptions(col);
+    const chosen = columnFilters[col] || [];
     const sig = opts.join('|');
-    if(sel.dataset.rendered !== sig){
-      sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
-      sel.dataset.rendered = sig;
+    if(menu.dataset.rendered !== sig){
+      menu.innerHTML = opts.map(o=>`<label class=\"msf-opt\"><input type=\"checkbox\" value=\"${escapeHtml(o)}\" onchange=\"msfPick('${col}', this.value, this.checked)\">${escapeHtml(o)}</label>`).join('')
+        + `<div class=\"msf-foot\"><button type=\"button\" onclick=\"msfClear('${col}')\">Clear</button></div>`;
+      menu.dataset.rendered = sig;
     }
-    const chosen = Array.isArray(val) ? val : (val ? [val] : []);
-    Array.from(sel.options).forEach(o=>{ o.selected = chosen.includes(o.value); });
+    menu.querySelectorAll('input[type=checkbox]').forEach(cb=>{ cb.checked = chosen.includes(cb.value); });
+    btn.querySelector('.msf-txt').textContent = chosen.length === 0 ? 'All'
+      : (chosen.length === 1 ? chosen[0] : chosen.length + ' selected');
+    btn.classList.toggle('active', chosen.length > 0);
   });
 }
+
+function msfPick(col, val, checked){
+  const arr = columnFilters[col] || (columnFilters[col] = []);
+  const i = arr.indexOf(val);
+  if(checked && i === -1) arr.push(val);
+  if(!checked && i !== -1) arr.splice(i, 1);
+  if(col === 'pillar') renderPillars();
+  renderTable();
+}
+
+function msfClear(col){
+  columnFilters[col] = [];
+  if(col === 'pillar') renderPillars();
+  renderTable();
+}
+
+function msfCloseAll(){
+  document.querySelectorAll('.msf-menu.open').forEach(m=>m.classList.remove('open'));
+}
+
+function msfToggle(ev, col){
+  ev.stopPropagation();
+  const menu = document.getElementById('msfMenu' + MSF_CAP[col]);
+  const wasOpen = menu.classList.contains('open');
+  msfCloseAll();
+  if(wasOpen) return;
+  const r = ev.currentTarget.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 190)) + 'px';
+  menu.style.top = (r.bottom + 4) + 'px';
+  menu.classList.add('open');
+}
+
+document.addEventListener('click', (e)=>{ if(!e.target.closest('.msf-menu')) msfCloseAll(); });
+window.addEventListener('resize', msfCloseAll);
 
 function updateSortIndicators(){
   document.querySelectorAll('.sort-ind').forEach(el=>{
@@ -2037,13 +2092,15 @@ function setBtnLabel(btn, text){
   if(lab) lab.textContent = text; else btn.textContent = text;
 }
 
-// Focus-area badges shrink in place once scrolled past, and expand again
-// (all six together) while the mouse is over the row.
+// Once you scroll past the focus-area badges they pin to the top of the page
+// in a reduced format, and expand again (all six together) on hover.
 (function(){
   const row = document.getElementById('pillarCards');
-  if(!row) return;
-  const onScroll = ()=>{ row.classList.toggle('pillars-compact', window.scrollY > 140); };
+  const sentinel = document.getElementById('pillarSentinel');
+  if(!row || !sentinel) return;
+  const onScroll = ()=>{ row.classList.toggle('pillars-compact', sentinel.getBoundingClientRect().top < 0); };
   window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('resize', onScroll);
   onScroll();
 })();
 
