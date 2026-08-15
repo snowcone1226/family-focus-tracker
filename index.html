@@ -32,7 +32,7 @@
   .logo{width:38px; height:38px; border-radius:9px; background:linear-gradient(135deg,var(--blue),var(--purple)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:16px;}
   .header h1{font-size:19px; margin:0; color:var(--gray-900);}
   .header .sub{font-size:12.5px; color:var(--gray-500); margin-top:2px;}
-  .header-actions{display:flex; gap:10px;}
+  .header-actions{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; align-items:stretch;}
   .btn{border:1px solid var(--gray-200); background:#fff; padding:9px 14px; border-radius:9px; font-size:13px; cursor:pointer; font-weight:600; color:var(--gray-700); display:flex; align-items:center; gap:6px;}
   .btn.primary{background:var(--blue); color:#fff; border-color:var(--blue);}
   .btn:hover{filter:brightness(0.97);}
@@ -106,6 +106,24 @@
   .pillars{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:14px; margin-bottom:18px;}
   .pillar-card{background:#fff; border-radius:var(--radius); padding:16px; border-top:4px solid var(--blue); box-shadow:0 1px 2px rgba(0,0,0,0.04); transition:box-shadow .15s;}
   .pillar-card:hover{box-shadow:0 2px 8px rgba(0,0,0,0.1);}
+  .pillar-card, .pillar-card .ring, .pillar-card .ring-inner, .pillar-card .pillar-name, .pillar-top{transition:padding .18s ease, width .18s ease, height .18s ease, font-size .18s ease, margin .18s ease, gap .18s ease;}
+  .pillars.pillars-compact .pillar-card{padding:8px 12px;}
+  .pillars.pillars-compact .pillar-top{gap:8px;}
+  .pillars.pillars-compact .ring{width:30px; height:30px;}
+  .pillars.pillars-compact .ring-inner{width:22px; height:22px; font-size:8px;}
+  .pillars.pillars-compact .pillar-name{font-size:11px; margin-top:0;}
+  .pillars.pillars-compact .pillar-count{display:none;}
+  .pillars.pillars-compact:hover .pillar-card{padding:16px;}
+  .pillars.pillars-compact:hover .pillar-top{gap:12px;}
+  .pillars.pillars-compact:hover .ring{width:52px; height:52px;}
+  .pillars.pillars-compact:hover .ring-inner{width:38px; height:38px; font-size:11px;}
+  .pillars.pillars-compact:hover .pillar-name{font-size:13px; margin-top:10px;}
+  .pillars.pillars-compact:hover .pillar-count{display:block;}
+  .btn-stack{flex-direction:column; gap:1px; align-items:center; padding:6px 12px; line-height:1.25;}
+  .btn-sub{font-size:9.5px; font-weight:500; color:var(--gray-500); white-space:nowrap;}
+  thead select[multiple]{overflow-y:auto; border:1px solid var(--gray-200); border-radius:6px; padding:2px; background:#fff;}
+  thead select[multiple] option{padding:1px 4px; border-radius:4px;}
+  thead select[multiple] option:checked{background:var(--blue-light) linear-gradient(0deg, var(--blue-light) 0%, var(--blue-light) 100%); color:var(--blue); font-weight:700;}
   .pillar-top{display:flex; align-items:center; gap:12px;}
   .ring{width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .ring-inner{width:38px; height:38px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;}
@@ -164,23 +182,22 @@
 </div>
 <div class="nw-badge-date" id="nwBadgeDate"></div>
 </a>
+<button class="btn" id="netWorthRefreshBtn" onclick="refreshNetWorth()" title="Refresh net worth from PocketSmith" style="padding:4px 9px; font-size:11px; margin-left:8px; align-self:center;">↻ Refresh</button>
   </div>
   <div class="header-actions">
     <button class="btn" onclick="openManage()">⚙ Manage areas &amp; badges</button>
     <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Import CSV</button>
     <input type="file" id="importFile" accept=".csv" style="display:none" onchange="importCSV(event)">
     <button class="btn" onclick="exportCSV()">⬇ Export CSV</button>
-    <button class="btn" id="gmailScanBtn" onclick="handleGmailImport()">✉ Scan My Gmail (30 days)</button>
+    <button class="btn btn-stack" id="gmailScanBtn" onclick="handleGmailImport()"><span class="btn-label">✉ Sync Alain's Gmail</span><span class="btn-sub" id="syncDateAllen">—</span></button>
+    <button class="btn btn-stack" id="syncCarineBtn" onclick="handleGmailImportCarine()"><span class="btn-label">✉ Sync Carine's Gmail</span><span class="btn-sub" id="syncDateCarine">—</span></button>
+    <button class="btn btn-stack" id="syncNowBtn" onclick="handleSyncNow()"><span class="btn-label">⟳ Refresh the data</span><span class="btn-sub" id="syncDateAll">—</span></button>
     <button class="btn primary" onclick="openModal()">+ New Activity</button>
   </div>
 </div>
 
 <div class="banner" id="syncBar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
   <div id="syncStatusText" style="font-size:12px;">Loading sync status…</div>
-  <div style="display:flex; gap:8px; flex-shrink:0;">
-    <button class="btn" id="syncCarineBtn" style="flex-shrink:0;" onclick="handleGmailImportCarine()">✉ Sync Carine's Gmail</button>
-    <button class="btn" id="syncNowBtn" style="flex-shrink:0;" onclick="handleSyncNow()">⟳ Sync now</button>
-  </div>
   <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--gray-600); margin-top:8px; flex-basis:100%;"><input type="checkbox" id="scanAggressiveToggle" onchange="setScanAggressive(this.checked)"> Scan more aggressively (include more borderline items automatically)</label>
 </div>
 
@@ -260,7 +277,7 @@
 <button style="margin-left:auto; border:none; background:transparent; color:var(--gray-500); cursor:pointer; font-size:12.5px; font-weight:600;" onclick="clearSelection()">Clear selection</button>
 </div>
   <table>
-    <thead><tr><th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th><th style="cursor:pointer;" onclick="setSort('title')">Activity<span class="sort-ind" data-col="title"></span></th><th style="cursor:pointer;" onclick="setSort('pillar')">Focus area<span class="sort-ind" data-col="pillar"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('pillar', this.value)" id="filterPillarSel" style="font-size:11px; margin-top:4px; max-width:110px;"></select></th><th style="cursor:pointer;" onclick="setSort('owner')">Owner<span class="sort-ind" data-col="owner"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('owner', this.value)" id="filterOwnerSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('priority')">Priority<span class="sort-ind" data-col="priority"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('priority', this.value)" id="filterPrioritySel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('status')">Status<span class="sort-ind" data-col="status"></span><br><select onclick="event.stopPropagation()" onchange="setColumnFilter('status', this.value)" id="filterStatusSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('due')">Due<span class="sort-ind" data-col="due"></span></th><th></th></tr></thead>
+    <thead><tr><th style="width:30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)"></th><th style="cursor:pointer;" onclick="setSort('title')">Activity<span class="sort-ind" data-col="title"></span></th><th style="cursor:pointer;" onclick="setSort('pillar')">Focus area<span class="sort-ind" data-col="pillar"></span><br><select onclick="event.stopPropagation()" multiple size="4" onmousedown="msPick(event,'pillar')" onchange="setColumnFilter('pillar', Array.from(this.selectedOptions).map(o=>o.value))" id="filterPillarSel" style="font-size:11px; margin-top:4px; max-width:150px; min-width:120px;"></select></th><th style="cursor:pointer;" onclick="setSort('owner')">Owner<span class="sort-ind" data-col="owner"></span><br><select onclick="event.stopPropagation()" multiple size="3" onmousedown="msPick(event,'owner')" onchange="setColumnFilter('owner', Array.from(this.selectedOptions).map(o=>o.value))" id="filterOwnerSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('priority')">Priority<span class="sort-ind" data-col="priority"></span><br><select onclick="event.stopPropagation()" multiple size="3" onmousedown="msPick(event,'priority')" onchange="setColumnFilter('priority', Array.from(this.selectedOptions).map(o=>o.value))" id="filterPrioritySel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('status')">Status<span class="sort-ind" data-col="status"></span><br><select onclick="event.stopPropagation()" multiple size="4" onmousedown="msPick(event,'status')" onchange="setColumnFilter('status', Array.from(this.selectedOptions).map(o=>o.value))" id="filterStatusSel" style="font-size:11px; margin-top:4px;"></select></th><th style="cursor:pointer;" onclick="setSort('due')">Due<span class="sort-ind" data-col="due"></span></th><th></th></tr></thead>
     <tbody id="tableBody"></tbody>
   </table>
 </div>
@@ -672,7 +689,8 @@ function renderBudgetCard(){
   ];
 
   const rolloverNote = rollover ? ` · $${rollover.toLocaleString()} rollover credit included in Net` : '';
-  document.getElementById('bcAsOf').textContent = (budget.asOf || 'Month to date') + rolloverNote;
+  const psRefreshed = (typeof syncStatus !== 'undefined' && syncStatus && syncStatus.pocketsmith) ? ' · refreshed ' + fmtSyncDate(syncStatus.pocketsmith) : '';
+  document.getElementById('bcAsOf').textContent = (budget.asOf || 'Month to date') + rolloverNote + psRefreshed;
 
   document.getElementById('bcCols').innerHTML = cols.map(c=>{
     const good = c.variance >= 0;
@@ -736,6 +754,9 @@ async function refreshPocketSmithBudget(){
       expense: psData.expense || budget.expense
     };
     saveList(BUDGET_KEY, budget);
+    syncStatus.pocketsmith = new Date().toISOString().slice(0,10);
+    saveList(SYNC_KEY, syncStatus);
+    renderSyncBar();
     renderBudgetCard();
     // Push immediately rather than waiting on the normal 800ms debounce, so
     // the shared backend reflects the new numbers right away -- otherwise a
@@ -776,7 +797,7 @@ let donutChart = null;
 
 // --- Sync status bar ---
 const SYNC_KEY = 'familyFocusTracker_syncStatus_v1';
-const DEFAULT_SYNC = { todo: new Date().toISOString().slice(0,10), gmailAllen: null, gmailCarine: null };
+const DEFAULT_SYNC = { todo: new Date().toISOString().slice(0,10), gmailAllen: null, gmailCarine: null, pocketsmith: null };
 let syncStatus = loadList(SYNC_KEY, DEFAULT_SYNC);
 
 function fmtSyncDate(iso){
@@ -785,7 +806,12 @@ function fmtSyncDate(iso){
 }
 function renderSyncBar(){
   document.getElementById('syncStatusText').innerHTML =
-    `Last synced — To Do: <b>${fmtSyncDate(syncStatus.todo)}</b> · Gmail (Allen): <b>${fmtSyncDate(syncStatus.gmailAllen)}</b> · Gmail (Carine): <b>${fmtSyncDate(syncStatus.gmailCarine)}</b>`;
+    `Last synced — To Do: <b>${fmtSyncDate(syncStatus.todo)}</b> · Gmail (Allen): <b>${fmtSyncDate(syncStatus.gmailAllen)}</b> · Gmail (Carine): <b>${fmtSyncDate(syncStatus.gmailCarine)}</b> · PocketSmith: <b>${fmtSyncDate(syncStatus.pocketsmith)}</b>`;
+  // Per-button last-refresh dates under each sync button in the top toolbar.
+  const setSub = (id, iso)=>{ const el = document.getElementById(id); if(el) el.textContent = iso ? fmtSyncDate(iso) : '—'; };
+  setSub('syncDateAllen', syncStatus.gmailAllen);
+  setSub('syncDateCarine', syncStatus.gmailCarine);
+  setSub('syncDateAll', syncStatus.todo);
 }
 // --- Microsoft To Do 2-way sync ---
 const MSAL_CLIENT_ID = 'b515b3ac-65b5-46f9-9991-d4e5b1873960';
@@ -1026,18 +1052,18 @@ async function syncMicrosoftTodo(){
 
 async function handleSyncNow(){
   const btn = document.getElementById('syncNowBtn');
-  if(btn){ btn.disabled = true; btn.textContent = 'Syncing\u2026'; btn.style.opacity = '0.6'; }
+  if(btn){ btn.disabled = true; setBtnLabel(btn, 'Syncing\u2026'); btn.style.opacity = '0.6'; }
   const errors = [];
   try{
     await syncMicrosoftTodo();
   }catch(e){
     errors.push('To Do sync: ' + (e && e.message ? e.message : e));
   }
-  if(btn){ btn.disabled = false; btn.textContent = '\u27f3 Sync now'; btn.style.opacity = '1'; }
+  if(btn){ btn.disabled = false; setBtnLabel(btn, '\u27f3 Refresh the data'); btn.style.opacity = '1'; }
   if(errors.length) alert(errors.join('\n'));
   // These manage their own button state and error alerts independently, and
   // Gmail's review-queue modal (if any candidate tasks are found) should
-  // appear after the Sync now button above is already re-enabled.
+  // appear after the Refresh the data button above is already re-enabled.
   refreshPocketSmithBudget();
 refreshNetWorth();
   handleGmailImport();
@@ -1058,7 +1084,7 @@ let importCandidates = [];
 function setGmailBtnState(btnId, text, disabled){
   const btn = document.getElementById(btnId);
   if(!btn) return;
-  btn.textContent = text;
+  setBtnLabel(btn, text);
   btn.disabled = !!disabled;
   btn.style.opacity = disabled ? '0.6' : '1';
   btn.style.cursor = disabled ? 'default' : 'pointer';
@@ -1076,7 +1102,7 @@ function handleGmailImport(){
       scope: GMAIL_SCOPE,
       callback: (resp)=>{
         if(resp.error){
-          setGmailBtnState('gmailScanBtn', '✉ Scan My Gmail (30 days)', false);
+          setGmailBtnState('gmailScanBtn', "✉ Sync Alain's Gmail", false);
           alert('Gmail connection was not completed: ' + resp.error);
           return;
         }
@@ -1125,7 +1151,7 @@ async function scanGmailAndImport(){
   const isCarine = activeGmailOwner === 'Carine';
   const token = isCarine ? gmailAccessTokenCarine : gmailAccessToken;
   const btnId = isCarine ? 'syncCarineBtn' : 'gmailScanBtn';
-  const idleLabel = isCarine ? "✉ Sync Carine's Gmail" : '✉ Scan My Gmail (30 days)';
+  const idleLabel = isCarine ? "✉ Sync Carine's Gmail" : "✉ Sync Alain's Gmail";
   setGmailBtnState(btnId, 'Scanning inbox…', true);
   try{
     const allIds = [];
@@ -1417,13 +1443,13 @@ function handleAddInline(selectEl, kind){
 }
 
 function renderStats(){
-  const total = data.length;
+  const total = data.filter(a=>a.status!=='Complete').length;
   const a1 = owners[0], a2 = owners[1], a3 = owners[2];
   const countFor = (o)=> o ? data.filter(a=>a.owner===o && a.status!=='Complete').length : 0;
   const stuck = data.filter(a=>a.status==='Blocked' || a.status==='Stalled').length;
   const cards = [
     {key:'all', num:total, label:'Activities', sub:`across ${pillars.length} focus areas`, color:'#111827', icon:'▤',
-      test:()=>true},
+      test:(a)=>a.status!=='Complete'},
     {key:'owner1', num:countFor(a1), label:a1?`Needs ${a1}`:'Needs owner', sub:'next step is theirs', color:'#2564cf', icon:'●',
       test:(a)=>a.owner===a1 && a.status!=='Complete'},
     {key:'owner2', num:countFor(a2), label:a2?`Needs ${a2}`:'Needs owner', sub:'next step is theirs', color:'#7c5cfc', icon:'●',
@@ -1472,7 +1498,7 @@ function renderDonut(){
 function priorityFilter(p){ return {key:'priority-'+p, label:p, test:(a)=>a.priority===p}; }
 function dueMonthKey(dueStr){ return dueStr ? dueStr.slice(0,7) : null; }
 function dueMonthLabel(key){ if(!key) return 'No due date'; const parts = key.split('-'); const y = Number(parts[0]), m = Number(parts[1]); return new Date(y, m-1, 1).toLocaleString('en-US',{month:'short', year:'numeric'}); }
-function dueMonthFilter(key){ return {key:'duemonth-'+key, label: dueMonthLabel(key==='none'?null:key), test:(a)=> (dueMonthKey(a.due)||'none')===key}; }
+function dueMonthFilter(key){ return {key:'duemonth-'+key, label: dueMonthLabel(key==='none'?null:key), test:(a)=> a.status!=='Complete' && (dueMonthKey(a.due)||'none')===key}; }
 
 function renderPriority(){
   const order = ['High','Medium','Low'];
@@ -1496,7 +1522,7 @@ function renderPriority(){
 
 function renderDueMonths(){
   const counts = {};
-  data.forEach(a=>{ const k = dueMonthKey(a.due) || 'none'; counts[k]=(counts[k]||0)+1; });
+  data.forEach(a=>{ if(a.status==='Complete') return; const k = dueMonthKey(a.due) || 'none'; counts[k]=(counts[k]||0)+1; });
   const keys = Object.keys(counts).filter(k=>k!=='none').sort();
   if(counts['none']) keys.push('none');
   const max = Math.max(1, ...Object.values(counts));
@@ -1551,7 +1577,7 @@ function renderPillars(){
     const done = items.filter(a=>a.status==='Complete').length;
     const pct = items.length ? Math.round(done/items.length*100) : 0;
     const active = items.filter(a=>a.status!=='Complete').length;
-    const isActive = activeFilter && activeFilter.key === 'pillar-'+p.name;
+    const isActive = columnFilters.pillar.includes(p.name);
     return `<div class="pillar-card" data-pillar="${escapeHtml(p.name)}" style="border-top-color:${p.main}; cursor:pointer; ${isActive ? `outline:2px solid ${p.main}; outline-offset:-1px; background:${p.light};` : ''}">
       <div class="pillar-top">
         <div class="ring" style="background:conic-gradient(${p.main} ${pct*3.6}deg, ${p.light} 0deg)"><div class="ring-inner" style="color:${p.main}">${pct}%</div></div>
@@ -1561,7 +1587,7 @@ function renderPillars(){
     </div>`;
   }).join('');
   document.querySelectorAll('#pillarCards .pillar-card').forEach(el=>{
-    el.addEventListener('click', ()=> setFilter(pillarFilter(el.dataset.pillar)));
+    el.addEventListener('click', ()=> togglePillarFilter(el.dataset.pillar));
   });
 }
 
@@ -1581,10 +1607,10 @@ function renderTable(){
   populateColumnFilterSelects();
   updateSortIndicators();
   let base = activeFilter ? data.filter(activeFilter.test) : data;
-  if(columnFilters.pillar) base = base.filter(a=>a.pillar===columnFilters.pillar);
-  if(columnFilters.owner) base = base.filter(a=>a.owner===columnFilters.owner);
-  if(columnFilters.priority) base = base.filter(a=>a.priority===columnFilters.priority);
-  if(columnFilters.status) base = base.filter(a=>a.status===columnFilters.status);
+  if(columnFilters.pillar.length) base = base.filter(a=>columnFilters.pillar.includes(a.pillar));
+  if(columnFilters.owner.length) base = base.filter(a=>columnFilters.owner.includes(a.owner));
+  if(columnFilters.priority.length) base = base.filter(a=>columnFilters.priority.includes(a.priority));
+  if(columnFilters.status.length) base = base.filter(a=>columnFilters.status.includes(a.status));
   const cmp = {
     title: (a,b)=> (a.title||'').localeCompare(b.title||''),
     pillar: (a,b)=> (a.pillar||'').localeCompare(b.pillar||''),
@@ -1616,7 +1642,7 @@ updateBulkBar();
 // --- Bulk selection & actions ---
 let selectedIds = new Set();
 let sortCol = 'due', sortDir = 1;
-let columnFilters = { pillar:'', owner:'', priority:'', status:'' };
+let columnFilters = { pillar:[], owner:[], priority:[], status:[] };
 
 function setSort(col){
   if(sortCol === col) sortDir = -sortDir; else { sortCol = col; sortDir = 1; }
@@ -1624,7 +1650,26 @@ function setSort(col){
 }
 
 function setColumnFilter(col, val){
-  columnFilters[col] = val;
+  columnFilters[col] = Array.isArray(val) ? val.filter(v=>v !== '') : (val ? [val] : []);
+  // Focus-area badges and the Focus area dropdown share one filter state.
+  if(col === 'pillar') renderPillars();
+  renderTable();
+}
+
+// A plain click toggles one option in a multi-select (no Ctrl/Cmd needed).
+function msPick(ev, col){
+  const opt = ev.target;
+  if(!opt || opt.tagName !== 'OPTION') return;
+  ev.preventDefault();
+  opt.selected = !opt.selected;
+  const sel = ev.currentTarget;
+  setColumnFilter(col, Array.from(sel.selectedOptions).map(o=>o.value));
+}
+
+function togglePillarFilter(name){
+  const i = columnFilters.pillar.indexOf(name);
+  if(i === -1) columnFilters.pillar.push(name); else columnFilters.pillar.splice(i, 1);
+  renderPillars();
   renderTable();
 }
 
@@ -1640,10 +1685,11 @@ function populateColumnFilterSelects(){
     if(!sel) return;
     const sig = opts.join('|');
     if(sel.dataset.rendered !== sig){
-      sel.innerHTML = '<option value="">All</option>' + opts.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
+      sel.innerHTML = opts.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
       sel.dataset.rendered = sig;
     }
-    sel.value = val || '';
+    const chosen = Array.isArray(val) ? val : (val ? [val] : []);
+    Array.from(sel.options).forEach(o=>{ o.selected = chosen.includes(o.value); });
   });
 }
 
@@ -1983,6 +2029,24 @@ function isScanAggressive(){ return localStorage.getItem(SCAN_AGGRESSIVE_KEY) ==
 function setScanAggressive(val){ localStorage.setItem(SCAN_AGGRESSIVE_KEY, val ? 'true' : 'false'); }
 const __aggToggle = document.getElementById('scanAggressiveToggle');
 if(__aggToggle) __aggToggle.checked = isScanAggressive();
+// Shared by the stacked toolbar buttons: only swap the label line, so the
+// last-refresh date underneath survives a state change.
+function setBtnLabel(btn, text){
+  if(!btn) return;
+  const lab = btn.querySelector('.btn-label');
+  if(lab) lab.textContent = text; else btn.textContent = text;
+}
+
+// Focus-area badges shrink in place once scrolled past, and expand again
+// (all six together) while the mouse is over the row.
+(function(){
+  const row = document.getElementById('pillarCards');
+  if(!row) return;
+  const onScroll = ()=>{ row.classList.toggle('pillars-compact', window.scrollY > 140); };
+  window.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+})();
+
 render();
 pullRemoteState();
 </script>
