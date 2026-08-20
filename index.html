@@ -406,7 +406,12 @@ function loadList(key, defaults){
   localStorage.setItem(key, JSON.stringify(defaults));
   return defaults;
 }
-function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); schedulePush(); }
+function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); localDirty = true; try{ localStorage.setItem(DIRTY_KEY, '1'); }catch(e){} schedulePush(); }
+// Persist to localStorage WITHOUT scheduling a push to the shared backend.
+// Used when we are writing data that just came FROM the backend (pull /
+// conflict-merge) -- pushing it back would needlessly bump the shared version
+// number and trigger avoidable conflicts on the other person's laptop.
+function persistLocal(key, list){ try{ localStorage.setItem(key, JSON.stringify(list)); }catch(e){} }
 
 // ---- Shared backend sync (Upstash-backed /api/state) ----
 // Local-first: the page always paints instantly from localStorage first (as before),
@@ -418,42 +423,78 @@ let pushTimer = null;
 let isPushing = false;
 let isPulling = false;
 let stateVersion = 0;
+const DIRTY_KEY = 'familyFocusTracker_dirty_v1';
+// True when this browser has changes not yet saved to the shared backend.
+// Persisted so changes whose page-close save didn't land are pushed+merged on
+// the next open instead of being overwritten by the initial pull.
+let localDirty = localStorage.getItem(DIRTY_KEY) === '1';
 
 function schedulePush(){
   clearTimeout(pushTimer);
   pushTimer = setTimeout(pushRemoteState, 800);
 }
 
+function mergeSyncStatusDates(local, remote){
+  const out = Object.assign({}, remote || {});
+  Object.keys(local || {}).forEach(k=>{
+    const lv = local[k], rv = out[k];
+    out[k] = (!rv || (lv && String(lv) > String(rv))) ? lv : rv;
+  });
+  return out;
+}
+
+// Merge the server's copy into this browser's copy WITHOUT losing local work:
+// keeps every server activity, then re-appends any local activity the server
+// doesn't have (matched by source email thread, falling back to title).
+// Used when a save hits a version conflict (the other laptop saved first).
+function mergeRemoteIntoLocal(remote){
+  const remoteActs = normalizeData(remote.activities || []);
+  const keyOf = a => a.sourceThreadId ? ('thr:' + a.sourceThreadId) : ('ttl:' + String(a.title||'').toLowerCase().trim());
+  const remoteKeys = new Set(remoteActs.map(keyOf));
+  const localOnly = (data || []).filter(a => !remoteKeys.has(keyOf(a)));
+  let nextId = Math.max(0, ...remoteActs.map(a => Number(a.id) || 0)) + 1;
+  localOnly.forEach(a => { a.id = nextId++; });
+  data = remoteActs.concat(localOnly);
+  pillars = remote.pillars || pillars;
+  statuses = remote.statuses || statuses;
+  owners = remote.owners || owners;
+  budget = remote.budget || budget;
+  syncStatus = mergeSyncStatusDates(syncStatus, remote.syncStatus);
+  persistLocal(ACT_KEY, data); persistLocal(PILLAR_KEY, pillars); persistLocal(STATUS_KEY, statuses);
+  persistLocal(OWNER_KEY, owners); persistLocal(BUDGET_KEY, budget); persistLocal(SYNC_KEY, syncStatus);
+}
+
 async function pushRemoteState(){
   if(isPushing) return;
   isPushing = true;
   try{
-    const payload = { activities: data, pillars, statuses, owners, budget, syncStatus, expectedVersion: stateVersion };
-    const res = await fetch(STATE_API, {
-      method: 'PUT',
-      headers: {'content-type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    if(res.ok){
-      const j = await res.json();
-      if(j && j.updatedAt) localStorage.setItem(LAST_SERVER_STAMP_KEY, j.updatedAt);
-      if(j && typeof j.version === 'number') stateVersion = j.version;
-    } else if(res.status === 409){
+    for(let attempt = 0; attempt < 3; attempt++){
+      const payload = { activities: data, pillars, statuses, owners, budget, syncStatus, expectedVersion: stateVersion };
+      const res = await fetch(STATE_API, {
+        method: 'PUT',
+        headers: {'content-type':'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if(res.ok){
+        const j = await res.json();
+        if(j && j.updatedAt) localStorage.setItem(LAST_SERVER_STAMP_KEY, j.updatedAt);
+        if(j && typeof j.version === 'number') stateVersion = j.version;
+        localDirty = false;
+        try{ localStorage.removeItem(DIRTY_KEY); }catch(e){}
+        break;
+      }
+      if(res.status !== 409) break;
       const j = await res.json().catch(()=>null);
       const current = j && j.current;
-      if(current){
-        data = normalizeData(current.activities || data);
-        pillars = current.pillars || pillars;
-        statuses = current.statuses || statuses;
-        owners = current.owners || owners;
-        budget = current.budget || budget;
-        syncStatus = current.syncStatus || syncStatus;
-        stateVersion = current.version || stateVersion;
-        saveList(ACT_KEY, data); saveList(PILLAR_KEY, pillars); saveList(STATUS_KEY, statuses);
-        saveList(OWNER_KEY, owners); saveList(BUDGET_KEY, budget); saveList(SYNC_KEY, syncStatus);
-        render(); renderBudgetCard(); renderSyncBar();
-        console.warn('Sync: shared list changed elsewhere first (version conflict) — reloaded the latest version. If your last edit is missing, please redo it.');
-      }
+      if(!current) break;
+      // The other laptop saved first. Instead of discarding this browser's
+      // changes (which made freshly imported tasks vanish), merge both copies
+      // and retry the save against the fresh version number.
+      mergeRemoteIntoLocal(current);
+      stateVersion = current.version || stateVersion;
+      if(current.updatedAt) localStorage.setItem(LAST_SERVER_STAMP_KEY, current.updatedAt);
+      render(); renderBudgetCard(); renderSyncBar();
+      console.warn('Sync: shared list changed elsewhere first - merged both copies and retrying save (attempt ' + (attempt+1) + ').');
     }
   }catch(e){ console.warn('Sync: push to shared backend failed', e); }
   isPushing = false;
@@ -461,15 +502,19 @@ async function pushRemoteState(){
 
 async function pullRemoteState(silent){
   if(isPulling || syncInProgress) return;
+  // Never overwrite local work that hasn't reached the server yet - flush it
+  // instead. The push path merges safely if someone else saved first.
+  if(localDirty || isPushing){ if(!isPushing) pushRemoteState(); return; }
   isPulling = true;
   try{
     const res = await fetch(STATE_API);
     if(!res.ok){ isPulling = false; return; }
     const remote = await res.json();
 
-    stateVersion = remote.version || 0;    if(!remote || !remote.exists){
-      // Nothing saved on the shared backend yet (first-ever deploy) — seed it
-      // from whatever this browser already has (Allen's existing 88 activities).
+    stateVersion = remote.version || 0;
+    if(!remote || !remote.exists){
+      // Nothing saved on the shared backend yet (first-ever deploy) - seed it
+      // from whatever this browser already has.
       await pushRemoteState();
       isPulling = false;
       return;
@@ -481,9 +526,9 @@ async function pullRemoteState(silent){
       statuses = remote.statuses || statuses;
       owners = remote.owners || owners;
       budget = remote.budget || budget;
-syncStatus = remote.syncStatus || syncStatus;
-      saveList(ACT_KEY, data); saveList(PILLAR_KEY, pillars); saveList(STATUS_KEY, statuses);
-      saveList(OWNER_KEY, owners); saveList(BUDGET_KEY, budget); saveList(SYNC_KEY, syncStatus);
+      syncStatus = remote.syncStatus || syncStatus;
+      persistLocal(ACT_KEY, data); persistLocal(PILLAR_KEY, pillars); persistLocal(STATUS_KEY, statuses);
+      persistLocal(OWNER_KEY, owners); persistLocal(BUDGET_KEY, budget); persistLocal(SYNC_KEY, syncStatus);
       localStorage.setItem(LAST_SERVER_STAMP_KEY, remote.updatedAt);
       render(); renderBudgetCard(); renderNetWorthBadge(); renderSyncBar();
     }
@@ -1094,6 +1139,9 @@ refreshNetWorth();
 // person's Gmail token/scan is tracked (and can be re-authed) separately.
 const GMAIL_CLIENT_ID = '131005310666-67em0d1gpa9jtnv1ut3fphg749tf4d9q.apps.googleusercontent.com';
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+// Matches explicit requests like "Add to the tracker", "add to family tracker",
+// "add this to the tracker" in a subject or snippet, in any casing/spacing.
+const TRACKER_FLAG_RE = /\badd\s+(?:this\s+|it\s+)?to\s+(?:the\s+)?(?:family\s+)?tracker\b/i;
 let gmailTokenClient = null;
 let gmailAccessToken = null;
 let gmailTokenClientCarine = null;
@@ -1185,7 +1233,23 @@ async function scanGmailAndImport(){
       allIds.push(...(listData.messages || []).map(m=>m.id));
       pageToken = listData.nextPageToken || '';
     } while(pageToken && allIds.length < HARD_CAP);
-    const SEEN_KEY = 'familyFocusTracker_seenEmailIds_' + (isCarine ? 'Carine' : 'Allen') + '_v1';
+    // Belt-and-braces: also run a targeted search for explicitly flagged
+    // "add to the tracker" emails, so they are found even when the inbox has
+    // more than HARD_CAP messages in the window (the general listing above is
+    // most-recent-first and capped, so older flagged emails could fall off).
+    try{
+      const flagQ = 'newer_than:' + lookbackDays + 'd subject:("add to the tracker" OR "add to tracker" OR "add to the family tracker")';
+      const flagResp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=' + encodeURIComponent(flagQ), { headers: { Authorization: 'Bearer ' + token } });
+      if(flagResp.ok){
+        const flagData = await flagResp.json();
+        (flagData.messages || []).forEach(m => { if(!allIds.includes(m.id)) allIds.push(m.id); });
+      }
+    }catch(e){ /* targeted flag search is best-effort */ }
+    // v2: the v1 seen-list wrongly marked emails as "seen" at scan time (before
+    // human review), permanently burning candidates whose tasks were never
+    // added. Bumping the key gives everyone a clean slate; already-imported
+    // tasks are filtered out by the duplicate check in the review modal.
+    const SEEN_KEY = 'familyFocusTracker_seenEmailIds_' + (isCarine ? 'Carine' : 'Allen') + '_v2';
     const seenIds = new Set(loadList(SEEN_KEY, []));
     const ids = allIds.filter(id => !seenIds.has(id));
     if(ids.length === 0){
@@ -1241,8 +1305,11 @@ async function scanGmailAndImport(){
     }
     const parsed = await parseResp.json();
     const tasks = parsed.tasks || [];
-    tasks.forEach(tk => seenIds.add(tk.emailId));
-    saveList(SEEN_KEY, Array.from(seenIds).slice(-3000));
+    // NOTE: emails are deliberately NOT marked as "seen" here. They are only
+    // marked once the review modal is resolved via "Add selected" (see
+    // markReviewedEmailsSeen) -- otherwise a canceled review, a closed laptop,
+    // or a lost save would permanently burn these candidates and every future
+    // re-scan would skip them.
 
     if(isCarine) syncStatus.gmailCarine = new Date().toISOString().slice(0,10);
     else syncStatus.gmailAllen = new Date().toISOString().slice(0,10);
@@ -1279,6 +1346,10 @@ function openImportReview(tasks){
   const existingTitles = data.map(a=>a.title);
   const deduped = tasks.filter(t=>{
     if(t.sourceThreadId && existingThreadIds.has(t.sourceThreadId)) return false;
+    // Emails explicitly flagged "add to the tracker" are always surfaced for
+    // review, even when the title loosely resembles an existing task -- only
+    // the exact same email thread counts as already imported.
+    if(TRACKER_FLAG_RE.test(t.sourceSubject || '') || TRACKER_FLAG_RE.test(t.title || '')) return true;
     return !existingTitles.some(et=> isLikelyDuplicateTask(t.title, et));
   });
   if(deduped.length === 0){
@@ -1365,8 +1436,28 @@ function renderImportReview(){
   });
 }
 
+// Record reviewed candidates in the per-person seen list so they stop being
+// re-offered. Called only from "Add selected" -- every candidate in the modal
+// has then been human-reviewed (added, or deliberately left unchecked).
+// Cancel marks nothing, so those candidates reappear on the next scan.
+function markReviewedEmailsSeen(cands){
+  const byOwner = {};
+  (cands || []).forEach(t=>{
+    if(!t.emailId) return;
+    const who = t.owner === 'Carine' ? 'Carine' : 'Allen';
+    (byOwner[who] = byOwner[who] || []).push(t.emailId);
+  });
+  Object.keys(byOwner).forEach(who=>{
+    const key = 'familyFocusTracker_seenEmailIds_' + who + '_v2';
+    const s = new Set(loadList(key, []));
+    byOwner[who].forEach(id => s.add(id));
+    persistLocal(key, Array.from(s).slice(-3000));
+  });
+}
+
 function addSelectedImportedTasks(){
   const selected = importCandidates.filter(t=>t.selected);
+  markReviewedEmailsSeen(importCandidates);
   if(selected.length === 0){ closeImportReview(); return; }
   const today = new Date().toISOString().slice(0,10);
   const dueDefault = new Date(); dueDefault.setDate(dueDefault.getDate()+7);
