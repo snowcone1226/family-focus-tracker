@@ -71,7 +71,13 @@ module.exports = async (req, res) => {
         return;
       }
 
-      const newVersion = currentVersion + 1;
+      // Atomic compare-and-swap: the version check and the SET happen inside a
+      // single Lua script, so two simultaneous saves (Allen's and Carine's
+      // laptops syncing at the same moment) can never both pass the check and
+      // silently overwrite each other -- the loser gets a 409 with the winner's
+      // state and merges client-side.
+      const expected = expectedVersion !== null ? expectedVersion : currentVersion;
+      const newVersion = expected + 1;
       const updatedAt = new Date().toISOString();
       const payload = {
         activities: body.activities,
@@ -83,8 +89,29 @@ module.exports = async (req, res) => {
         version: newVersion,
         updatedAt
       };
-      await redisCommand(['SET', STATE_KEY, JSON.stringify(payload)]);
-      res.status(200).json({ ok: true, version: newVersion, updatedAt });
+      const casScript =
+        "local cur = redis.call('GET', KEYS[1]) " +
+        "local curv = 0 " +
+        "if cur then " +
+        "  local ok, parsed = pcall(cjson.decode, cur) " +
+        "  if ok and type(parsed) == 'table' and parsed.version then curv = tonumber(parsed.version) or 0 end " +
+        "end " +
+        "if curv ~= tonumber(ARGV[1]) then return cur or '' end " +
+        "redis.call('SET', KEYS[1], ARGV[2]) " +
+        "return '__OK__'";
+      const casRes = await redisCommand(['EVAL', casScript, '1', STATE_KEY, String(expected), JSON.stringify(payload)]);
+      if (casRes && casRes.result === '__OK__') {
+        res.status(200).json({ ok: true, version: newVersion, updatedAt });
+        return;
+      }
+      // Lost a race between our version pre-check and the write: hand back
+      // whatever is stored now so the client can merge and retry.
+      let raceState = null;
+      try { raceState = casRes && casRes.result ? JSON.parse(casRes.result) : null; } catch (e) { /* ignore */ }
+      res.status(409).json({
+        error: 'Conflict: shared state has changed since you last loaded it.',
+        current: { exists: !!raceState, version: (raceState && raceState.version) || 0, ...(raceState || {}) }
+      });
       return;
     }
 
