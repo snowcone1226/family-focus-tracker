@@ -34,7 +34,7 @@ module.exports = async (req, res) => {
 
 ${scopeParagraph}
 
-Regardless of the scope above, always include an email as actionable if its body contains an explicit request to add it to the tracker -- phrases such as "add to the tracker", "add this to the tracker", "track this", "put this on the tracker", or similar variations. Treat that phrase as an unconditional instruction to create a task for that email, even if nothing else about the email would otherwise seem actionable, and always mark that task confidence "high". This override applies no matter what language the rest of the email is written in (e.g. an email in French about "devenir electricien" / becoming an electrician should still be evaluated as a normal candidate task under the scope above, not skipped just because it isn't in English).
+Regardless of the scope above, always include an email as actionable if its SUBJECT or body contains an explicit request to add it to the tracker. Many of these are self-addressed notes whose subject line starts with the flag followed by the actual task, e.g. "Add to the tracker: go kart summer camp" or "Fwd: Add to tracker: September College Visits" -- for those, the task title is the part after the flag phrase -- phrases such as "add to the tracker", "add this to the tracker", "track this", "put this on the tracker", or similar variations. Treat that phrase as an unconditional instruction to create a task for that email, even if nothing else about the email would otherwise seem actionable, and always mark that task confidence "high". This override applies no matter what language the rest of the email is written in (e.g. an email in French about "devenir electricien" / becoming an electrician should still be evaluated as a normal candidate task under the scope above, not skipped just because it isn't in English).
 
 For every task you extract, also set "confidence" to "high" or "low":
 - "high": the email clearly and unambiguously requires action from ${ownerName} -- an explicit deadline, a reply that's expected, a payment or form due, an RSVP that's actually required, or an explicit "add to the tracker" request.
@@ -119,6 +119,32 @@ For each actionable email, call the extract_tasks tool with a concise task list.
       sourceFrom: byId[t.emailId] ? byId[t.emailId].from : '',
       sourceThreadId: byId[t.emailId] ? (byId[t.emailId].threadId || '') : ''
     }));
+
+    // Deterministic safety net: any email explicitly flagged "add to the
+    // tracker" in its subject or snippet MUST come back as a candidate task,
+    // even if the model overlooked it. Missing ones get a task synthesized
+    // straight from the subject line.
+    const FLAG_RE = /\badd\s+(?:this\s+|it\s+)?to\s+(?:the\s+)?(?:family\s+)?tracker\b/i;
+    const STRIP_RE = /^\s*(?:(?:fwd|fw|re|tr)\s*:\s*)*add\s+(?:this\s+|it\s+)?to\s+(?:the\s+)?(?:family\s+)?tracker\s*[:\-–—]*\s*/i;
+    const coveredIds = new Set(enriched.map((t) => t.emailId));
+    emails.forEach((e) => {
+      const hay = (e.subject || '') + ' ' + (e.snippet || '');
+      if (!FLAG_RE.test(hay) || coveredIds.has(e.id)) return;
+      let title = (e.subject || '').replace(STRIP_RE, '').trim();
+      if (!title) title = (e.snippet || '').slice(0, 80).trim() || 'Task from flagged email';
+      enriched.push({
+        emailId: e.id,
+        title,
+        focusArea: 'Personal Growth & Admin',
+        owner: ownerName,
+        priority: 'Medium',
+        confidence: 'high',
+        notes: 'Explicitly flagged "add to the tracker" in the email.',
+        sourceSubject: e.subject || '',
+        sourceFrom: e.from || '',
+        sourceThreadId: e.threadId || ''
+      });
+    });
 
     res.status(200).json({ tasks: enriched });
   } catch (err) {
