@@ -31,8 +31,13 @@ function easternNow() {
 
 function isTransfer(row) {
   if (row.is_transfer === true) return true;
-  if (row.category && row.category.is_transfer === true) return true;
-  return false;
+  if (!row.category) return false;
+  if (row.category.is_transfer === true) return true;
+  // Allen files internal moves (card payments, paycheck sweeps) under a plain
+  // category literally named "transfer"; PocketSmith's own Income & Expense
+  // report leaves those out, so the dashboard has to match.
+  const title = String(row.category.title || '').toLowerCase();
+  return title === 'transfer' || title.includes('transfer');
 }
 
 
@@ -120,6 +125,22 @@ module.exports = async (req, res) => {
     }
 
 
+    // PocketSmith's own household budget for the month (category-based, spans
+    // every account) kept alongside the account-scoped figure for comparison.
+    let householdIncomeBudgetMonth = 0;
+    let householdExpenseBudgetMonth = 0;
+    try {
+      const me = await psGet('/me', headers);
+      const summary = await psGet(
+        `/users/${me.id}/budget_summary?period=months&interval=1&start_date=${monthStart}&end_date=${monthEnd}`,
+        headers
+      );
+      householdIncomeBudgetMonth = Math.abs(Number(summary.income && summary.income.total_forecast_amount) || 0);
+      householdExpenseBudgetMonth = Math.abs(Number(summary.expense && summary.expense.total_forecast_amount) || 0);
+    } catch (e) {
+      // Non-fatal: the account-scoped budget above still stands.
+    }
+
     // Prorate the month's budget to the point we're at in the month.
     const ratio = daysElapsed / daysInMonth;
     const incomeBudgetMtd = incomeBudgetMonth * ratio;
@@ -152,6 +173,12 @@ module.exports = async (req, res) => {
         elapsedPct: round2(elapsedPct),
         varianceAmount: round2(varianceAmount),
         status: varianceAmount >= 0 ? 'under' : 'over'
+      },
+      household: {
+        incomeBudgetMonth: round2(householdIncomeBudgetMonth),
+        expenseBudgetMonth: round2(householdExpenseBudgetMonth),
+        incomeBudgetMtd: round2(householdIncomeBudgetMonth * ratio),
+        expenseBudgetMtd: round2(householdExpenseBudgetMonth * ratio)
       },
       fetchedAt: new Date().toISOString()
     });
