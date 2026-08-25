@@ -102,8 +102,16 @@ module.exports = async (req, res) => {
 
       const txns = await fetchAccountTransactions(accountId, monthStart, today, headers);
       for (const t of txns) {
-        if (isTransfer(t)) continue;
         const amt = Number(t.amount_in_base_currency != null ? t.amount_in_base_currency : t.amount) || 0;
+        if (isTransfer(t)) {
+          // Salary and contract payments land in the joint bank account already
+          // filed under the "transfer" category. Money arriving in a real bank
+          // account is household income; money moving onto a credit card is a
+          // genuine internal move and stays out of both columns.
+          const acctType = t.transaction_account && t.transaction_account.type;
+          if (amt > 0 && acctType === 'bank') incomeActual += amt;
+          continue;
+        }
         if (amt > 0) incomeActual += amt;
         else expenseActual += -amt;
       }
@@ -143,11 +151,17 @@ module.exports = async (req, res) => {
 
     // Prorate the month's budget to the point we're at in the month.
     const ratio = daysElapsed / daysInMonth;
-    const incomeBudgetMtd = incomeBudgetMonth * ratio;
-    const expenseBudgetMtd = expenseBudgetMonth * ratio;
+    // The household (category-level) budget is the real yardstick: the budget
+    // attached to just these five accounts' scenarios covers only a fraction of
+    // what actually gets charged to them. Fall back to it only if the summary
+    // call failed.
+    const budgetIncomeMonth = householdIncomeBudgetMonth || incomeBudgetMonth;
+    const budgetExpenseMonth = householdExpenseBudgetMonth || expenseBudgetMonth;
+    const incomeBudgetMtd = budgetIncomeMonth * ratio;
+    const expenseBudgetMtd = budgetExpenseMonth * ratio;
 
     const round2 = (n) => Math.round(n * 100) / 100;
-    const spentPct = expenseBudgetMonth > 0 ? (expenseActual / expenseBudgetMonth) * 100 : 0;
+    const spentPct = budgetExpenseMonth > 0 ? (expenseActual / budgetExpenseMonth) * 100 : 0;
     const elapsedPct = ratio * 100;
     const varianceAmount = expenseBudgetMtd - expenseActual; // positive = under-spent
 
@@ -166,7 +180,7 @@ module.exports = async (req, res) => {
       expense: {
         budgeted: round2(expenseBudgetMtd),
         actual: round2(expenseActual),
-        monthlyBudgeted: round2(expenseBudgetMonth)
+        monthlyBudgeted: round2(budgetExpenseMonth)
       },
       pace: {
         spentPct: round2(spentPct),
@@ -174,11 +188,10 @@ module.exports = async (req, res) => {
         varianceAmount: round2(varianceAmount),
         status: varianceAmount >= 0 ? 'under' : 'over'
       },
-      household: {
-        incomeBudgetMonth: round2(householdIncomeBudgetMonth),
-        expenseBudgetMonth: round2(householdExpenseBudgetMonth),
-        incomeBudgetMtd: round2(householdIncomeBudgetMonth * ratio),
-        expenseBudgetMtd: round2(householdExpenseBudgetMonth * ratio)
+      budgetSource: householdExpenseBudgetMonth ? 'household' : 'accounts',
+      accountScopedBudget: {
+        incomeBudgetMonth: round2(incomeBudgetMonth),
+        expenseBudgetMonth: round2(expenseBudgetMonth)
       },
       fetchedAt: new Date().toISOString()
     });
